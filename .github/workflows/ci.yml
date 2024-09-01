@@ -62,7 +62,7 @@ jobs:
         uses: ./info
         with:
           server: ${{ secrets.TARGETURL}}
-          hmac: ${{ secrets.HMAC }}
+          key: ${{ secrets.HMAC }}
         
       - name: Print Output
         id: output
