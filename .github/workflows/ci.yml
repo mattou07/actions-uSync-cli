@@ -55,8 +55,7 @@ jobs:
 
       - name: Test Local Action
         id: test-action
-        uses: ./
-        working-directory: Setup
+        uses: mattou07/uSync.CLI-action/Setup
         
       - name: Print Output
         id: output
