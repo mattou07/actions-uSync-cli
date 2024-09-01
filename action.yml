@@ -1,5 +1,6 @@
 name: 'uSync.CLI-action'
-description: 'A Github action wrapper for https://github.com/Jumoo/uSync.CommandLine'
+description:
+  'A Github action wrapper for https://github.com/Jumoo/uSync.CommandLine'
 author: 'mattou07'
 
 # Add your action's branding here. This will appear on the GitHub Marketplace.
@@ -9,15 +10,16 @@ branding:
 
 # Define your inputs here.
 inputs:
-  milliseconds:
-    description: 'Your input description here'
-    required: true
-    default: '1000'
+  dotnet-version:
+    description:
+      'Optional SDK version(s) to use. If not provided, will install global.json
+      version when available. Examples: 2.2.104, 3.1, 3.1.x, 3.x, 6.0.2xx'
+    required: false
 
 # Define your outputs here.
 outputs:
-  time:
-    description: 'Your output description here'
+  version:
+    description: 'Version of uSync CLI installed.'
 
 runs:
   using: node20
