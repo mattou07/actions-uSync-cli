@@ -55,8 +55,9 @@ jobs:
 
       - name: Test Local Action
         id: test-action
-        uses: Setup/action.yml
-
+        uses: ./
+        working-directory: Setup
+        
       - name: Print Output
         id: output
         run: echo "${{ steps.test-action.outputs.version }}"
