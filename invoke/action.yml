@@ -10,6 +10,13 @@ branding:
 
 # Define your inputs here.
 inputs:
+  command:
+    description:
+      'The command you would like to run from the uSync CLI (Defaults to info
+      command)'
+    required: false
+    default: 'info'
+
   server:
     description: 'URL to for the Umbraco website to target'
     required: true
@@ -25,4 +32,4 @@ outputs:
 
 runs:
   using: node20
-  main: ../dist/info/index.js
+  main: ../dist/invoke/index.js

@@ -8,12 +8,7 @@ import * as exec from '@actions/exec'
  */
 export async function run(): Promise<void> {
   try {
-    core.debug(`Checking for Dotnet`)
-    await exec.exec('dotnet --version')
-
-    core.debug(`Installing uSync.Cli`)
-    await exec.exec('dotnet tool install uSync.Cli -g')
-
+    const command: string = core.getInput('command')
     const server: string = core.getInput('server')
     const key: string = core.getInput('key')
 
@@ -39,8 +34,12 @@ export async function run(): Promise<void> {
       }
     }
 
-    core.debug(`Attempt to gather info of target ${server}`)
-    await exec.exec('uSync run info', [`-s ${server}`, `-k ${key}`], options)
+    core.debug(`Running ${command} on target ${server}`)
+    await exec.exec(
+      `uSync run ${command}`,
+      [`-s ${server}`, `-k ${key}`],
+      options
+    )
 
     // Set outputs for other workflow steps to use
     core.setOutput('version', myOutput)

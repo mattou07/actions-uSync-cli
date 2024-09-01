@@ -57,10 +57,11 @@ jobs:
         id: setup-action
         uses: ./setup
 
-      - name: Test Info Action
-        id: info-action
-        uses: ./info
+      - name: Test Invoke Action
+        id: invoke-action
+        uses: ./invoke
         with:
+          command: 'ping'
           server: ${{ secrets.TARGETURL}}
           key: ${{ secrets.HMAC }}
 
