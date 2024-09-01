@@ -26203,8 +26203,21 @@ async function run() {
         // core.debug(new Date().toTimeString())
         // Set outputs for other workflow steps to use
         //core.setOutput('time', new Date().toTimeString())
+        let myOutput = '';
+        let myError = '';
+        const options = {};
+        options.listeners = {
+            stdout: (data) => {
+                myOutput += data.toString();
+            },
+            stderr: (data) => {
+                myError += data.toString();
+            }
+        };
         core.debug(`Attempt to invoke uSync.Cli version`);
-        await exec.exec('uSync Tool --version');
+        await exec.exec('uSync --version', options);
+        // Set outputs for other workflow steps to use
+        core.setOutput('version', myOutput);
     }
     catch (error) {
         // Fail the workflow run if an error occurs

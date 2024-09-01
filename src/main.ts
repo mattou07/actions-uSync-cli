@@ -26,8 +26,23 @@ export async function run(): Promise<void> {
 
     // Set outputs for other workflow steps to use
     //core.setOutput('time', new Date().toTimeString())
+    let myOutput = ''
+    let myError = ''
+    const options: any = {}
+    options.listeners = {
+      stdout: (data: Buffer) => {
+        myOutput += data.toString()
+      },
+      stderr: (data: Buffer) => {
+        myError += data.toString()
+      }
+    }
+
     core.debug(`Attempt to invoke uSync.Cli version`)
-    await exec.exec('uSync Tool --version')
+    await exec.exec('uSync --version', options)
+
+    // Set outputs for other workflow steps to use
+    core.setOutput('version', myOutput)
   } catch (error) {
     // Fail the workflow run if an error occurs
     if (error instanceof Error) core.setFailed(error.message)
