@@ -40,7 +40,7 @@ export async function run(): Promise<void> {
     }
 
     core.debug(`Attempt to gather info of target ${server}`)
-    await exec.exec('uSync run info', [`s=${server}`,`k=${key}`], options)
+    await exec.exec('uSync run info', [`-s ${server}`,`-k ${key}`], options)
 
     // Set outputs for other workflow steps to use
     core.setOutput('version', myOutput)
