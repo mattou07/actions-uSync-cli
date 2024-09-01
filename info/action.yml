@@ -1,0 +1,30 @@
+name: 'uSync.CLI-action Info'
+description:
+  'A Github action wrapper for https://github.com/Jumoo/uSync.CommandLine'
+author: 'mattou07'
+
+# Add your action's branding here. This will appear on the GitHub Marketplace.
+branding:
+  icon: 'heart'
+  color: 'red'
+
+# Define your inputs here.
+inputs:
+  server:
+    description:
+      'URL to for the Umbraco website to target'
+    required: true
+  
+  hmac:
+    description:
+      'HMAC Key for authentication'
+    required: true
+
+# Define your outputs here.
+outputs:
+  version:
+    description: 'Version of uSync CLI installed.'
+
+runs:
+  using: node20
+  main: ../dist/info/index.js

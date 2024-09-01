@@ -53,9 +53,16 @@ jobs:
         id: checkout
         uses: actions/checkout@v4
 
-      - name: Test Local Action
+      - name: Test Setup Action
         id: test-action
         uses: ./setup
+
+      - name: Test Info Action
+        id: test-action
+        uses: ./info
+        with:
+          server: ${{ secrets.TARGETURL}}
+          hmac: ${{ secrets.HMAC }}
         
       - name: Print Output
         id: output
