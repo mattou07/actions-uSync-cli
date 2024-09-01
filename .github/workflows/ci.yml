@@ -55,7 +55,7 @@ jobs:
 
       - name: Test Local Action
         id: test-action
-        uses: ./
+        uses: ./Setup
 
       - name: Print Output
         id: output
