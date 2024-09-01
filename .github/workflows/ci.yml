@@ -63,7 +63,7 @@ jobs:
         with:
           server: ${{ secrets.TARGETURL}}
           key: ${{ secrets.HMAC }}
-        
+
       - name: Print Output
         id: output
         run: echo "${{ steps.test-action.outputs.version }}"

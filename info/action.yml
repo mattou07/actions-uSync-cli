@@ -11,13 +11,11 @@ branding:
 # Define your inputs here.
 inputs:
   server:
-    description:
-      'URL to for the Umbraco website to target'
+    description: 'URL to for the Umbraco website to target'
     required: true
-  
-  hmac:
-    description:
-      'HMAC Key for authentication'
+
+  key:
+    description: 'HMAC Key for authentication'
     required: true
 
 # Define your outputs here.
