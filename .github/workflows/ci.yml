@@ -55,7 +55,7 @@ jobs:
 
       - name: Test Local Action
         id: test-action
-        uses: ../Setup/action.yml
+        uses: Setup/action.yml
 
       - name: Print Output
         id: output
