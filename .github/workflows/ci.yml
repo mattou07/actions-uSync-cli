@@ -57,11 +57,26 @@ jobs:
         id: setup-action
         uses: ./setup
 
-      - name: Test Invoke Action
-        id: invoke-action
+      - name: Test Invoke Action (default)
+        id: invoke-action-default
+        uses: ./invoke
+        with:
+          server: ${{ secrets.TARGETURL}}
+          key: ${{ secrets.HMAC }}
+
+      - name: Test Invoke Action (ping)
+        id: invoke-action-ping
         uses: ./invoke
         with:
           command: 'ping'
+          server: ${{ secrets.TARGETURL}}
+          key: ${{ secrets.HMAC }}
+
+      - name: Test Invoke Action (Rebuild DB Cache)
+        id: invoke-action-rebuildDBCache
+        uses: ./invoke
+        with:
+          command: 'Rebuild-DBCache'
           server: ${{ secrets.TARGETURL}}
           key: ${{ secrets.HMAC }}
 
