@@ -1,21 +1,19 @@
-name: 'uSync.CLI-action Info'
-description:
-  'A Github action wrapper for https://github.com/Jumoo/uSync.CommandLine'
+name: 'uSync CLI Invoke'
+description: 'Low-level uSync CLI command execution with flexible parameters'
 author: 'mattou07'
 
 # Add your action's branding here. This will appear on the GitHub Marketplace.
 branding:
-  icon: 'heart'
-  color: 'red'
+  icon: 'terminal'
+  color: 'gray-dark'
 
 # Define your inputs here.
 inputs:
   command:
     description:
-      'The command you would like to run from the uSync CLI (Defaults to info
-      command)'
-    required: false
-    default: 'info'
+      'The raw uSync CLI command to execute (e.g., "run report", "run import",
+      "run export")'
+    required: true
 
   server:
     description: 'URL to for the Umbraco website to target'
@@ -25,11 +23,40 @@ inputs:
     description: 'HMAC Key for authentication'
     required: true
 
+  set:
+    description: 'Handler set to use (default: default)'
+    required: false
+    default: 'default'
+
+  group:
+    description: 'Handler group to use (e.g., "structure", "content", "all")'
+    required: false
+    default: 'all'
+
+  force:
+    description: 'Force the operation (adds --force flag)'
+    required: false
+    default: 'false'
+
+  additional-args:
+    description: 'Additional command line arguments to pass to uSync CLI'
+    required: false
+    default: ''
+
 # Define your outputs here.
 outputs:
-  version:
-    description: 'Version of uSync CLI installed.'
+  result:
+    description: 'Result of the uSync operation'
+
+  changes-detected:
+    description: 'Whether changes were detected (for report action)'
+
+  changes-count:
+    description: 'Number of changes detected'
+
+  success:
+    description: 'Whether the operation was successful'
 
 runs:
-  using: node20
-  main: ../dist/invoke/index.js
+  using: 'node20'
+  main: '../dist/invoke/index.js'

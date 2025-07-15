@@ -1,43 +1,349 @@
-# uSync CLI Action
+# uSync CLI GitHub Actions
 
-Use this Action to invoke the Usync CLI in your workflows: https://github.com/Jumoo/uSync.CommandLine
+[![GitHub Super-Linter](https://github.com/mattou07/actions-uSync-cli/actions/workflows/linter.yml/badge.svg)](https://github.com/marketplace/actions/super-linter)
+![CI](https://github.com/mattou07/actions-uSync-cli/actions/workflows/ci.yml/badge.svg)
+[![Check dist/](https://github.com/mattou07/actions-uSync-cli/actions/workflows/check-dist.yml/badge.svg)](https://github.com/mattou07/actions-uSync-cli/actions/workflows/check-dist.yml)
+[![CodeQL](https://github.com/mattou07/actions-uSync-cli/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/mattou07/actions-uSync-cli/actions/workflows/codeql-analysis.yml)
+[![Coverage](./badges/coverage.svg)](./badges/coverage.svg)
 
-## What does this action do?
-This action will install the Usync CLI via dotnet tool install: `dotnet tool install uSync.Cli -g` onto you GitHub agent
-Then invoke any command implemented/supported in the Usync CLI.
+A comprehensive set of GitHub Actions for
+[uSync CLI](https://github.com/Jumoo/uSync.CommandLine), enabling automated
+Umbraco content and structure synchronization in your CI/CD pipelines.
 
-This action is a wrapper around the uSync CLI tool, should you need support for additional commands, please send a pull request to https://github.com/Jumoo/uSync.CommandLine
+## 🚀 Features
 
-**DISCLAIMER: This action is still under development, use with caution.**
+- **Setup Action**: Install and configure uSync CLI on GitHub runners
+- **Low-Level Invoke Action**: Execute any uSync CLI command with flexible
+  parameters
+- **High-Level Specialized Actions**: Purpose-built actions for common workflows
+- **Structure Import**: Import document types, data types, and structure with
+  reporting
+- **Content Import**: Import content items with optional pre-validation
+- **Content Sync**: Full environment-to-environment content synchronization
+- **Comprehensive Reporting**: Rich GitHub Actions summaries with detailed
+  change tracking
+- **Robust Error Handling**: Comprehensive error detection and informative
+  failure messages
+- **Shared Architecture**: Eliminates code duplication with shared utility
+  functions
 
-# How to use?
+## 📦 Actions Available
 
-Ensure you have setup Usync Commands on your Umbraco website, you can follow steps to do this on Kevin's readme here: https://github.com/Jumoo/uSync.CommandLine?tab=readme-ov-file#usync-command-library-for-umbraco
+### 1. Setup uSync CLI
 
-Additional info here also: https://github.com/Jumoo/uSync.CommandLine/blob/v11/main/uSync.Commands.Server/readme.md
-
-**Tagged versions currently not supported yet as this is an early version, for now @main is used to grab the latest changes of the action from the main branch**
-
-In your workflow add the following YAML to install this action.
+Installs and configures the uSync CLI tool on the GitHub runner with version
+detection and validation.
 
 ```yaml
-      - name: Test Setup Action
-        id: setup-action
-        uses: mattou07/actions-uSync-cli/setup@main
+- name: Setup uSync CLI
+  uses: mattou07/actions-uSync-cli/Setup@v1
+  with:
+    dotnet-version: '8.0.x'
+    usync-version: 'latest' # or specific version like '13.1.0'
 ```
 
-Then after the install step use the invoke action to invoke any command supported by the CLI. Ensure you have added your generated HMAC key as a secret to keep it safe.
-Change the `command: 'ping'` line to whatever command you wish.
+### 2. Invoke Action (Low-Level)
+
+Execute any uSync CLI command with flexible command strings. Perfect for custom
+workflows or commands not covered by specialized actions.
+
 ```yaml
-      - name: USync CLI ping
-        id: invoke-action-ping
-        uses: mattou07/actions-uSync-cli/invoke@main
+- name: Run Custom uSync Command
+  uses: mattou07/actions-uSync-cli/invoke@v1
+  with:
+    command: 'run report'
+    server: 'https://your-umbraco-site.com'
+    key: ${{ secrets.USYNC_HMAC_KEY }}
+    set: 'default'
+    mode: 'all' # optional: 'structure', 'content', or 'all'
+    force: 'false'
+```
+
+````
+
+### 3. Import Structure
+
+Import document types, data types, and compositions.
+
+```yaml
+- name: Import Structure
+  uses: mattou07/actions-uSync-cli/import-structure@v1
+  with:
+    server: 'https://your-umbraco-site.com'
+    key: ${{ secrets.USYNC_HMAC_KEY }}
+    force: 'false'
+    report-first: 'true'
+````
+
+### 4. Import Content
+
+Import content items and pages.
+
+```yaml
+- name: Import Content
+  uses: mattou07/actions-uSync-cli/import-content@v1
+  with:
+    server: 'https://your-umbraco-site.com'
+    key: ${{ secrets.USYNC_HMAC_KEY }}
+    force: 'false'
+    report-first: 'true'
+```
+
+### 5. Sync Content Between Environments
+
+Synchronize content from one environment to another.
+
+```yaml
+- name: Sync Content
+  uses: mattou07/actions-uSync-cli/sync-content@v1
+  with:
+    source-server: 'https://staging.your-site.com'
+    source-key: ${{ secrets.STAGING_HMAC_KEY }}
+    target-server: 'https://production.your-site.com'
+    target-key: ${{ secrets.PROD_HMAC_KEY }}
+    content-type: 'all' # or 'structure', 'content'
+    dry-run: 'false'
+    force: 'false'
+```
+
+## 📋 Complete Workflow Examples
+
+### Basic Structure and Content Import
+
+```yaml
+name: Import Umbraco Changes
+
+on:
+  push:
+    branches: [main]
+    paths: ['uSync/**']
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
         with:
-          command: 'ping'
-          server: ${{ vars.UMBRACO_WEBAPP_URL}}
-          key: ${{ secrets.HMAC }}
+          dotnet-version: '8.0.x'
+
+      - name: Setup uSync CLI
+        uses: mattou07/actions-uSync-cli/Setup@v1
+
+      - name: Import Structure
+        id: structure
+        uses: mattou07/actions-uSync-cli/import-structure@v1
+        with:
+          server: ${{ vars.UMBRACO_URL }}
+          key: ${{ secrets.USYNC_HMAC_KEY }}
+          report-first: 'true'
+
+      - name: Import Content
+        if: steps.structure.outputs.success == 'true'
+        uses: mattou07/actions-uSync-cli/import-content@v1
+        with:
+          server: ${{ vars.UMBRACO_URL }}
+          key: ${{ secrets.USYNC_HMAC_KEY }}
+          report-first: 'true'
 ```
 
-# Wishful TODO's
-- See if we can support forked versions of https://github.com/Jumoo/uSync.CommandLine to be installed.
-- Parse output from the CLI to assert outcomes, such as Report returning true if changes are detected or if an import failed
+### Environment Synchronization
+
+```yaml
+name: Sync Production to Staging
+
+on:
+  schedule:
+    - cron: '0 2 * * 1' # Weekly on Monday at 2 AM
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Setup uSync CLI
+        uses: mattou07/actions-uSync-cli/Setup@v1
+
+      - name: Dry Run Sync
+        id: dry-run
+        uses: mattou07/actions-uSync-cli/sync-content@v1
+        with:
+          source-server: ${{ vars.PROD_URL }}
+          source-key: ${{ secrets.PROD_HMAC_KEY }}
+          target-server: ${{ vars.STAGING_URL }}
+          target-key: ${{ secrets.STAGING_HMAC_KEY }}
+          content-type: 'content'
+          dry-run: 'true'
+
+      - name: Actual Sync
+        if: github.event_name == 'workflow_dispatch'
+        uses: mattou07/actions-uSync-cli/sync-content@v1
+        with:
+          source-server: ${{ vars.PROD_URL }}
+          source-key: ${{ secrets.PROD_HMAC_KEY }}
+          target-server: ${{ vars.STAGING_URL }}
+          target-key: ${{ secrets.STAGING_HMAC_KEY }}
+          content-type: 'content'
+          dry-run: 'false'
+          force: 'true'
+```
+
+### Report-Only Workflow
+
+```yaml
+name: uSync Report
+
+on:
+  pull_request:
+    paths: ['uSync/**']
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup uSync CLI
+        uses: mattou07/actions-uSync-cli/Setup@v1
+
+      - name: Generate Report
+        uses: mattou07/actions-uSync-cli/invoke@v1
+        with:
+          action: 'report'
+          server: ${{ vars.UMBRACO_URL }}
+          key: ${{ secrets.USYNC_HMAC_KEY }}
+          group: 'all'
+```
+
+## 🔧 Input Parameters
+
+### Common Parameters
+
+| Parameter | Description                       | Required | Default   |
+| --------- | --------------------------------- | -------- | --------- |
+| `server`  | Umbraco server URL                | ✅       | -         |
+| `key`     | HMAC authentication key           | ✅       | -         |
+| `set`     | Handler set to use                | ❌       | `default` |
+| `force`   | Force import (overwrite existing) | ❌       | `false`   |
+
+### Action-Specific Parameters
+
+#### Invoke Action
+
+| Parameter | Description                                                                           | Default  |
+| --------- | ------------------------------------------------------------------------------------- | -------- |
+| `action`  | Action to perform: `report`, `import`, `export`, `import-structure`, `import-content` | `report` |
+| `group`   | Handler group: `all`, `structure`, `content`                                          | `all`    |
+
+#### Sync Content Action
+
+| Parameter       | Description            | Required |
+| --------------- | ---------------------- | -------- |
+| `source-server` | Source environment URL | ✅       |
+| `source-key`    | Source HMAC key        | ✅       |
+| `target-server` | Target environment URL | ✅       |
+| `target-key`    | Target HMAC key        | ✅       |
+| `content-type`  | Content type to sync   | ❌       |
+| `dry-run`       | Preview changes only   | ❌       |
+
+#### Import Actions
+
+| Parameter      | Description              | Default |
+| -------------- | ------------------------ | ------- |
+| `report-first` | Run report before import | `true`  |
+
+## 📊 Outputs
+
+All actions provide comprehensive outputs:
+
+| Output             | Description                          |
+| ------------------ | ------------------------------------ |
+| `success`          | Whether the operation was successful |
+| `changes-detected` | Number of changes detected           |
+| `changes-count`    | Total number of items processed      |
+| `result`           | Detailed result message              |
+
+## 🔐 Security Setup
+
+1. **HMAC Keys**: Store your uSync HMAC keys as GitHub secrets:
+
+   ```
+   USYNC_HMAC_KEY=your-production-key
+   STAGING_HMAC_KEY=your-staging-key
+   ```
+
+2. **Environment URLs**: Use GitHub variables for server URLs:
+   ```
+   UMBRACO_URL=https://your-site.com
+   STAGING_URL=https://staging.your-site.com
+   ```
+
+## 🛠️ Development
+
+### Building the Actions
+
+```bash
+npm install
+npm run all
+```
+
+### Testing
+
+```bash
+npm test
+npm run coverage
+```
+
+### Package Individual Actions
+
+```bash
+npm run package:setup
+npm run package:invoke
+npm run package:sync-content
+npm run package:import-structure
+npm run package:import-content
+```
+
+## 📄 Requirements
+
+- .NET SDK 6.0+ on the runner (for uSync CLI)
+- uSync enabled on your Umbraco site
+- Valid HMAC authentication configured
+- uSync files in your repository (typically in `uSync/` folder)
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests
+5. Run `npm run all` to format, lint, test, and package
+6. Submit a pull request
+
+## 📝 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
+for details.
+
+## 🔗 Related Links
+
+- [uSync CLI](https://github.com/Jumoo/uSync.CommandLine)
+- [uSync Documentation](https://docs.jumoo.co.uk/usync/)
+- [Umbraco CMS](https://umbraco.com/)
+
+## 📞 Support
+
+If you encounter issues or have questions:
+
+1. Check the [Issues](https://github.com/mattou07/actions-uSync-cli/issues) page
+2. Review the uSync CLI documentation
+3. Create a new issue with detailed information

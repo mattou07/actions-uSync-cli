@@ -1,0 +1,65 @@
+name: 'uSync Content Sync'
+description:
+  'Sync content from one Umbraco environment to another using uSync CLI'
+author: 'mattou07'
+
+branding:
+  icon: 'refresh-cw'
+  color: 'blue'
+
+inputs:
+  source-server:
+    description: 'Source Umbraco server URL'
+    required: true
+
+  source-key:
+    description: 'Source server HMAC key'
+    required: true
+
+  target-server:
+    description: 'Target Umbraco server URL'
+    required: true
+
+  target-key:
+    description: 'Target server HMAC key'
+    required: true
+
+  content-type:
+    description: 'Type of content to sync: all, structure, content'
+    required: false
+    default: 'all'
+
+  set:
+    description: 'Handler set to use'
+    required: false
+    default: 'default'
+
+  force:
+    description: 'Force import on target (overwrite existing)'
+    required: false
+    default: 'false'
+
+  dry-run:
+    description: 'Perform a dry run (report only, no actual sync)'
+    required: false
+    default: 'false'
+
+outputs:
+  export-result:
+    description: 'Result of the export operation'
+
+  import-result:
+    description: 'Result of the import operation'
+
+  changes-exported:
+    description: 'Number of items exported from source'
+
+  changes-imported:
+    description: 'Number of items imported to target'
+
+  success:
+    description: 'Whether the sync operation was successful'
+
+runs:
+  using: 'node20'
+  main: '../dist/sync-content/index.js'

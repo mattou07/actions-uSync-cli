@@ -1,0 +1,51 @@
+name: 'uSync Import Content'
+description: 'Import content using uSync CLI'
+author: 'mattou07'
+
+branding:
+  icon: 'file-text'
+  color: 'purple'
+
+inputs:
+  server:
+    description: 'Umbraco server URL'
+    required: true
+
+  key:
+    description: 'HMAC key for authentication'
+    required: true
+
+  set:
+    description: 'Handler set to use'
+    required: false
+    default: 'default'
+
+  force:
+    description: 'Force import (overwrite existing content)'
+    required: false
+    default: 'false'
+
+  report-first:
+    description: 'Run a report first to show what will change'
+    required: false
+    default: 'true'
+
+outputs:
+  report-result:
+    description: 'Result of the report operation (if run)'
+
+  import-result:
+    description: 'Result of the import operation'
+
+  changes-detected:
+    description: 'Number of content changes detected'
+
+  changes-imported:
+    description: 'Number of content items imported'
+
+  success:
+    description: 'Whether the import operation was successful'
+
+runs:
+  using: 'node20'
+  main: '../dist/import-content/index.js'

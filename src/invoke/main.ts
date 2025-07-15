@@ -1,50 +1,60 @@
 import * as core from '@actions/core'
-import * as exec from '@actions/exec'
-//import { wait } from './wait'
+import { executeUSyncCommand } from '../shared/usync-utils'
 
 /**
- * The main function for the action.
+ * The main function for the invoke action.
  * @returns {Promise<void>} Resolves when the action is complete.
  */
 export async function run(): Promise<void> {
   try {
-    const command: string = core.getInput('command')
-    const server: string = core.getInput('server')
-    const key: string = core.getInput('key')
+    const command = core.getInput('command')
+    const server = core.getInput('server')
+    const key = core.getInput('key')
+    const set = core.getInput('set')
+    const force = core.getInput('force') === 'true'
+    const mode = core.getInput('mode')
 
-    // Debug logs are only output if the `ACTIONS_STEP_DEBUG` secret is true
-    //core.debug(`Waiting ${ms} milliseconds ...`)
-
-    // // Log the current timestamp, wait, then log the new timestamp
-    // core.debug(new Date().toTimeString())
-    // await wait(parseInt(ms, 10))
-    // core.debug(new Date().toTimeString())
-
-    // Set outputs for other workflow steps to use
-    //core.setOutput('time', new Date().toTimeString())
-    let myOutput = ''
-    let myError = ''
-    const options: any = {}
-    options.listeners = {
-      stdout: (data: Buffer) => {
-        myOutput += data.toString()
-      },
-      stderr: (data: Buffer) => {
-        myError += data.toString()
-      }
+    // Validate inputs
+    if (!command) {
+      throw new Error('Command is required')
+    }
+    if (!server || !key) {
+      throw new Error('Server URL and HMAC key are required')
     }
 
-    core.debug(`Running ${command} on target ${server}`)
-    await exec.exec(
-      `uSync run ${command}`,
-      [`-s ${server}`, `-k ${key}`],
-      options
+    core.info(`🚀 Executing uSync command: ${command}`)
+
+    // Execute the command using shared utilities
+    const result = await executeUSyncCommand(
+      command,
+      server,
+      key,
+      set,
+      mode,
+      force
     )
 
-    // Set outputs for other workflow steps to use
-    core.setOutput('version', myOutput)
+    if (!result.success) {
+      throw new Error(`Command failed: ${result.errorOutput}`)
+    }
+
+    // Set outputs
+    core.setOutput('result', result.output)
+    core.setOutput('changes', result.changes)
+    core.setOutput('success', true)
+
+    core.info(`✅ Command completed successfully: ${result.changes} changes`)
   } catch (error) {
-    // Fail the workflow run if an error occurs
-    if (error instanceof Error) core.setFailed(error.message)
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error occurred'
+    core.error(`Command failed: ${errorMessage}`)
+    core.setFailed(errorMessage)
+
+    // Set failure outputs
+    core.setOutput('success', false)
+    core.setOutput('changes', 0)
   }
 }
+
+// eslint-disable-next-line @typescript-eslint/no-floating-promises
+run()

@@ -26182,10 +26182,9 @@ var __importStar = (this && this.__importStar) || function (mod) {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.run = run;
 const core = __importStar(__nccwpck_require__(2186));
-const exec = __importStar(__nccwpck_require__(1514));
-//import { wait } from './wait'
+const usync_utils_1 = __nccwpck_require__(7595);
 /**
- * The main function for the action.
+ * The main function for the invoke action.
  * @returns {Promise<void>} Resolves when the action is complete.
  */
 async function run() {
@@ -26193,35 +26192,214 @@ async function run() {
         const command = core.getInput('command');
         const server = core.getInput('server');
         const key = core.getInput('key');
-        // Debug logs are only output if the `ACTIONS_STEP_DEBUG` secret is true
-        //core.debug(`Waiting ${ms} milliseconds ...`)
-        // // Log the current timestamp, wait, then log the new timestamp
-        // core.debug(new Date().toTimeString())
-        // await wait(parseInt(ms, 10))
-        // core.debug(new Date().toTimeString())
-        // Set outputs for other workflow steps to use
-        //core.setOutput('time', new Date().toTimeString())
-        let myOutput = '';
-        let myError = '';
-        const options = {};
-        options.listeners = {
-            stdout: (data) => {
-                myOutput += data.toString();
-            },
-            stderr: (data) => {
-                myError += data.toString();
-            }
-        };
-        core.debug(`Running ${command} on target ${server}`);
-        await exec.exec(`uSync run ${command}`, [`-s ${server}`, `-k ${key}`], options);
-        // Set outputs for other workflow steps to use
-        core.setOutput('version', myOutput);
+        const set = core.getInput('set');
+        const force = core.getInput('force') === 'true';
+        const mode = core.getInput('mode');
+        // Validate inputs
+        if (!command) {
+            throw new Error('Command is required');
+        }
+        if (!server || !key) {
+            throw new Error('Server URL and HMAC key are required');
+        }
+        core.info(`🚀 Executing uSync command: ${command}`);
+        // Execute the command using shared utilities
+        const result = await (0, usync_utils_1.executeUSyncCommand)(command, server, key, set, mode, force);
+        if (!result.success) {
+            throw new Error(`Command failed: ${result.errorOutput}`);
+        }
+        // Set outputs
+        core.setOutput('result', result.output);
+        core.setOutput('changes', result.changes);
+        core.setOutput('success', true);
+        core.info(`✅ Command completed successfully: ${result.changes} changes`);
     }
     catch (error) {
-        // Fail the workflow run if an error occurs
-        if (error instanceof Error)
-            core.setFailed(error.message);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+        core.error(`Command failed: ${errorMessage}`);
+        core.setFailed(errorMessage);
+        // Set failure outputs
+        core.setOutput('success', false);
+        core.setOutput('changes', 0);
     }
+}
+// eslint-disable-next-line @typescript-eslint/no-floating-promises
+run();
+
+
+/***/ }),
+
+/***/ 7595:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.executeUSyncCommand = executeUSyncCommand;
+exports.parseChangesFromOutput = parseChangesFromOutput;
+exports.generateUSyncSummary = generateUSyncSummary;
+const core = __importStar(__nccwpck_require__(2186));
+const exec = __importStar(__nccwpck_require__(1514));
+/**
+ * Execute a uSync CLI command with standard parameters
+ */
+async function executeUSyncCommand(command, server, key, set, group, force, additionalArgs) {
+    let output = '';
+    let errorOutput = '';
+    const listeners = {
+        stdout: (data) => {
+            output += data.toString();
+        },
+        stderr: (data) => {
+            errorOutput += data.toString();
+        }
+    };
+    // Build the command arguments
+    const args = [command, '-s', server, '-k', key];
+    if (set && set !== 'default') {
+        args.push('-set', set);
+    }
+    if (group && group !== 'all') {
+        args.push('-group', group);
+    }
+    if (force) {
+        args.push('-force');
+    }
+    if (additionalArgs) {
+        args.push(...additionalArgs.split(' ').filter(arg => arg.trim()));
+    }
+    const fullCommand = `uSync ${args.join(' ')}`;
+    try {
+        core.info(`Executing: ${fullCommand}`);
+        const exitCode = await exec.exec('uSync', args, {
+            listeners,
+            cwd: process.cwd(),
+            env: process.env,
+            ignoreReturnCode: true
+        });
+        const changes = parseChangesFromOutput(output);
+        // Log output for debugging
+        if (output) {
+            core.info('uSync Output:');
+            core.info(output);
+        }
+        if (errorOutput) {
+            if (exitCode === 0) {
+                core.warning('uSync Warnings:');
+                core.warning(errorOutput);
+            }
+            else {
+                core.error('uSync Errors:');
+                core.error(errorOutput);
+            }
+        }
+        return {
+            success: exitCode === 0,
+            exitCode,
+            output,
+            errorOutput,
+            changes,
+            command: fullCommand
+        };
+    }
+    catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown execution error';
+        return {
+            success: false,
+            exitCode: -1,
+            output,
+            errorOutput: errorOutput || errorMessage,
+            changes: 0,
+            command: fullCommand
+        };
+    }
+}
+/**
+ * Parse change count from uSync output
+ */
+function parseChangesFromOutput(output) {
+    let changes = 0;
+    const lines = output.split('\n').filter(line => line.trim());
+    for (const line of lines) {
+        if (line.includes('Changes:') ||
+            line.includes('changes detected') ||
+            line.includes('items processed') ||
+            line.includes('changes found') ||
+            line.includes('Document Type') ||
+            line.includes('Data Type') ||
+            line.includes('ContentType') ||
+            line.includes('DataType')) {
+            const match = line.match(/(\d+)/);
+            if (match) {
+                changes = Math.max(changes, parseInt(match[1], 10));
+            }
+        }
+    }
+    return changes;
+}
+/**
+ * Generate a standardized summary for uSync operations
+ */
+async function generateUSyncSummary(operation, results, additionalInfo) {
+    let summary = `## 🔧 uSync ${operation} Results\n\n`;
+    const overallSuccess = results.every(r => r.success);
+    summary += `**Overall Status:** ${overallSuccess ? '✅ Success' : '❌ Failed'}\n\n`;
+    for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        const stepName = result.command.includes('report')
+            ? 'Report'
+            : result.command.includes('import')
+                ? 'Import'
+                : result.command.includes('export')
+                    ? 'Export'
+                    : `Step ${i + 1}`;
+        summary += `### ${stepName}\n\n`;
+        summary += `**Command:** \`${result.command}\`\n`;
+        summary += `**Status:** ${result.success ? '✅ Success' : '❌ Failed'}\n`;
+        summary += `**Changes:** ${result.changes}\n`;
+        if (result.output) {
+            summary += `**Output:** \`${result.output.trim().substring(0, 200)}${result.output.length > 200 ? '...' : ''}\`\n`;
+        }
+        if (result.errorOutput && !result.success) {
+            summary += `**Error:** \`${result.errorOutput.trim().substring(0, 200)}${result.errorOutput.length > 200 ? '...' : ''}\`\n`;
+        }
+        summary += `\n`;
+    }
+    if (additionalInfo) {
+        summary += `### Additional Information\n\n${additionalInfo}\n\n`;
+    }
+    if (!overallSuccess) {
+        summary += `### Troubleshooting\n\n`;
+        summary += `❌ Operation failed. Common issues:\n\n`;
+        summary += `- Check server URL and HMAC key\n`;
+        summary += `- Verify uSync is properly configured on the target site\n`;
+        summary += `- Ensure network connectivity to the Umbraco server\n`;
+        summary += `- Check uSync logs in Umbraco for detailed error information\n\n`;
+    }
+    await core.summary.addRaw(summary).write();
 }
 
 
