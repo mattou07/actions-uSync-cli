@@ -1,10 +1,226 @@
-# uSync CLI GitHub Actions
+# uSync CLI GitHub Action
 
 [![GitHub Super-Linter](https://github.com/mattou07/actions-uSync-cli/actions/workflows/linter.yml/badge.svg)](https://github.com/marketplace/actions/super-linter)
 ![CI](https://github.com/mattou07/actions-uSync-cli/actions/workflows/ci.yml/badge.svg)
 [![Check dist/](https://github.com/mattou07/actions-uSync-cli/actions/workflows/check-dist.yml/badge.svg)](https://github.com/mattou07/actions-uSync-cli/actions/workflows/check-dist.yml)
 [![CodeQL](https://github.com/mattou07/actions-uSync-cli/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/mattou07/actions-uSync-cli/actions/workflows/codeql-analysis.yml)
 [![Coverage](./badges/coverage.svg)](./badges/coverage.svg)
+
+A single GitHub Action that installs the
+[uSync CLI](https://github.com/Jumoo/uSync.CommandLine) and runs any uSync
+command against your Umbraco instance. No separate setup step required.
+
+## Prerequisites
+
+- .NET SDK on the runner (add `actions/setup-dotnet` if your runner doesn't have
+  it)
+- An API user configured in Umbraco with a client ID and secret (see
+  [API user setup](#api-user-setup))
+- uSync installed on the target Umbraco site
+
+## Usage
+
+```yaml
+- uses: mattou07/actions-uSync-cli@v1
+  with:
+    server: ${{ vars.UMBRACO_URL }}
+    client-id: ${{ secrets.USYNC_CLIENT_ID }}
+    secret: ${{ secrets.USYNC_SECRET }}
+    command: usync-import
+```
+
+The action installs `uSync.Cli` as a global .NET tool on first run and skips the
+install on subsequent steps within the same job.
+
+## Inputs
+
+| Input             | Description                                          | Required | Default  |
+| ----------------- | ---------------------------------------------------- | -------- | -------- |
+| `server`          | URL of the Umbraco server                            | ✅       | -        |
+| `client-id`       | OAuth2 client ID for the API user                    | ✅       | -        |
+| `secret`          | OAuth2 client secret for the API user                | ✅       | -        |
+| `command`         | uSync CLI command to run (see [Commands](#commands)) | ✅       | -        |
+| `usync-version`   | Version of uSync CLI to install, or `latest`         | ❌       | `latest` |
+| `additional-args` | Extra arguments appended to the command              | ❌       | `""`     |
+
+## Outputs
+
+| Output      | Description                              |
+| ----------- | ---------------------------------------- |
+| `success`   | `true` if the command exited with code 0 |
+| `exit-code` | Raw exit code from the CLI               |
+| `output`    | Combined stdout and stderr from the CLI  |
+
+## Commands
+
+Common commands exposed by the uSync CLI:
+
+| Command           | Description                            |
+| ----------------- | -------------------------------------- |
+| `usync-ping`      | Poll until the Umbraco server responds |
+| `usync-import`    | Import all uSync items into Umbraco    |
+| `usync-export`    | Export all uSync items from Umbraco    |
+| `cache-rebuild`   | Rebuild the Umbraco cache              |
+| `models-rebuild`  | Rebuild generated models               |
+| `indexer-rebuild` | Rebuild search indexes                 |
+
+Run `uSync --help` on any runner to see the full list.
+
+## YAML Examples
+
+### Ping — wait for the site to be ready
+
+Use this after a deployment to block subsequent steps until Umbraco is
+responding. The CLI retries automatically until the server replies or times out.
+
+```yaml
+- name: Wait for Umbraco
+  uses: mattou07/actions-uSync-cli@v1
+  with:
+    server: ${{ vars.UMBRACO_URL }}
+    client-id: ${{ secrets.USYNC_CLIENT_ID }}
+    secret: ${{ secrets.USYNC_SECRET }}
+    command: usync-ping
+```
+
+### Report — check what would change without applying anything
+
+A dry-run style check. Useful on pull requests to surface pending uSync changes
+as a job summary without touching the site.
+
+```yaml
+- name: uSync Report
+  uses: mattou07/actions-uSync-cli@v1
+  with:
+    server: ${{ vars.UMBRACO_URL }}
+    client-id: ${{ secrets.USYNC_CLIENT_ID }}
+    secret: ${{ secrets.USYNC_SECRET }}
+    command: usync-report
+```
+
+### Import — apply uSync changes
+
+Imports all pending uSync items into the target environment. Pass `--force` via
+`additional-args` to overwrite items that already exist.
+
+```yaml
+- name: uSync Import
+  uses: mattou07/actions-uSync-cli@v1
+  with:
+    server: ${{ vars.UMBRACO_URL }}
+    client-id: ${{ secrets.USYNC_CLIENT_ID }}
+    secret: ${{ secrets.USYNC_SECRET }}
+    command: usync-import
+    additional-args: '--force'
+```
+
+## Complete Workflow Example
+
+A full pipeline that deploys an Umbraco site and then synchronises uSync
+changes: ping until the site is up, run a report for visibility, then import.
+
+```yaml
+name: Deploy and sync uSync changes
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # ... your build and deploy steps here ...
+
+      - name: Wait for Umbraco to respond
+        uses: mattou07/actions-uSync-cli@v1
+        with:
+          server: ${{ vars.UMBRACO_URL }}
+          client-id: ${{ secrets.USYNC_CLIENT_ID }}
+          secret: ${{ secrets.USYNC_SECRET }}
+          command: usync-ping
+
+      - name: uSync Report
+        id: report
+        uses: mattou07/actions-uSync-cli@v1
+        with:
+          server: ${{ vars.UMBRACO_URL }}
+          client-id: ${{ secrets.USYNC_CLIENT_ID }}
+          secret: ${{ secrets.USYNC_SECRET }}
+          command: usync-report
+
+      - name: uSync Import
+        uses: mattou07/actions-uSync-cli@v1
+        with:
+          server: ${{ vars.UMBRACO_URL }}
+          client-id: ${{ secrets.USYNC_CLIENT_ID }}
+          secret: ${{ secrets.USYNC_SECRET }}
+          command: usync-import
+          additional-args: '--force'
+```
+
+### Using a specific CLI version
+
+Pin to a known-good version of uSync CLI to avoid unexpected breakage from
+upstream releases:
+
+```yaml
+- uses: mattou07/actions-uSync-cli@v1
+  with:
+    server: ${{ vars.UMBRACO_URL }}
+    client-id: ${{ secrets.USYNC_CLIENT_ID }}
+    secret: ${{ secrets.USYNC_SECRET }}
+    command: usync-import
+    usync-version: '16.0.0'
+```
+
+## API User Setup
+
+The uSync CLI uses Umbraco's Management API with OAuth2 client credentials. You
+need to create an API user in Umbraco before using this action.
+
+1. In the Umbraco back office go to **Users** and create a new API user
+2. Assign the user to a group with appropriate uSync permissions
+3. Generate a **client ID** and **client secret** for the user
+4. Store these as GitHub secrets:
+
+```
+USYNC_CLIENT_ID=your-client-id
+USYNC_SECRET=your-client-secret
+```
+
+```
+UMBRACO_URL=https://your-site.com
+```
+
+Refer to the
+[uSync CLI documentation](https://github.com/Jumoo/uSync.CommandLine) for full
+details on API user configuration.
+
+## Development
+
+```bash
+npm install
+npm run all     # format, lint, test, and bundle
+npm test        # run tests only
+```
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+## Links
+
+- [uSync CLI](https://github.com/Jumoo/uSync.CommandLine)
+- [uSync Documentation](https://docs.jumoo.co.uk/usync/)
+- [Umbraco CMS](https://umbraco.com/)
 
 A comprehensive set of GitHub Actions for
 [uSync CLI](https://github.com/Jumoo/uSync.CommandLine), enabling automated
@@ -101,9 +317,9 @@ Synchronize content from one environment to another.
     source-key: ${{ secrets.STAGING_HMAC_KEY }}
     target-server: 'https://production.your-site.com'
     target-key: ${{ secrets.PROD_HMAC_KEY }}
-    content-type: 'all' # or 'structure', 'content'
-    dry-run: 'false'
+    set: 'default'
     force: 'false'
+    report-first: 'true'
 ```
 
 ## 📋 Complete Workflow Examples
@@ -180,8 +396,7 @@ jobs:
           source-key: ${{ secrets.PROD_HMAC_KEY }}
           target-server: ${{ vars.STAGING_URL }}
           target-key: ${{ secrets.STAGING_HMAC_KEY }}
-          content-type: 'content'
-          dry-run: 'true'
+          report-first: 'true'
 
       - name: Actual Sync
         if: github.event_name == 'workflow_dispatch'
@@ -191,8 +406,6 @@ jobs:
           source-key: ${{ secrets.PROD_HMAC_KEY }}
           target-server: ${{ vars.STAGING_URL }}
           target-key: ${{ secrets.STAGING_HMAC_KEY }}
-          content-type: 'content'
-          dry-run: 'false'
           force: 'true'
 ```
 
@@ -218,10 +431,9 @@ jobs:
       - name: Generate Report
         uses: mattou07/actions-uSync-cli/invoke@v1
         with:
-          action: 'report'
+          command: 'run report'
           server: ${{ vars.UMBRACO_URL }}
           key: ${{ secrets.USYNC_HMAC_KEY }}
-          group: 'all'
 ```
 
 ## 🔧 Input Parameters
@@ -237,23 +449,29 @@ jobs:
 
 ### Action-Specific Parameters
 
+#### Setup Action
+
+| Parameter        | Description                              | Required | Default  |
+| ---------------- | ---------------------------------------- | -------- | -------- |
+| `dotnet-version` | .NET SDK version to ensure               | ❌       | `8.0.x`  |
+| `usync-version`  | uSync CLI version (`latest` or specific) | ❌       | `latest` |
+
 #### Invoke Action
 
-| Parameter | Description                                                                           | Default  |
-| --------- | ------------------------------------------------------------------------------------- | -------- |
-| `action`  | Action to perform: `report`, `import`, `export`, `import-structure`, `import-content` | `report` |
-| `group`   | Handler group: `all`, `structure`, `content`                                          | `all`    |
+| Parameter | Description                                           | Required | Default |
+| --------- | ----------------------------------------------------- | -------- | ------- |
+| `command` | Command to execute (e.g., "run report", "run import") | ✅       | -       |
+| `mode`    | Handler mode: `all`, `structure`, `content`           | ❌       | -       |
 
 #### Sync Content Action
 
-| Parameter       | Description            | Required |
-| --------------- | ---------------------- | -------- |
-| `source-server` | Source environment URL | ✅       |
-| `source-key`    | Source HMAC key        | ✅       |
-| `target-server` | Target environment URL | ✅       |
-| `target-key`    | Target HMAC key        | ✅       |
-| `content-type`  | Content type to sync   | ❌       |
-| `dry-run`       | Preview changes only   | ❌       |
+| Parameter       | Description              | Required | Default |
+| --------------- | ------------------------ | -------- | ------- |
+| `source-server` | Source environment URL   | ✅       | -       |
+| `source-key`    | Source HMAC key          | ✅       | -       |
+| `target-server` | Target environment URL   | ✅       | -       |
+| `target-key`    | Target HMAC key          | ✅       | -       |
+| `report-first`  | Run report before import | ❌       | `true`  |
 
 #### Import Actions
 
@@ -265,12 +483,59 @@ jobs:
 
 All actions provide comprehensive outputs:
 
+| Output    | Description                          |
+| --------- | ------------------------------------ |
+| `success` | Whether the operation was successful |
+| `changes` | Number of changes detected/processed |
+| `result`  | Detailed result message or output    |
+
+### Action-Specific Outputs
+
+#### Import Actions
+
 | Output             | Description                          |
 | ------------------ | ------------------------------------ |
-| `success`          | Whether the operation was successful |
-| `changes-detected` | Number of changes detected           |
-| `changes-count`    | Total number of items processed      |
-| `result`           | Detailed result message              |
+| `report-result`    | Output from the report command       |
+| `import-result`    | Output from the import command       |
+| `changes-detected` | Number of changes detected in report |
+| `changes-imported` | Number of changes actually imported  |
+
+#### Sync Content Action
+
+| Output                    | Description                          |
+| ------------------------- | ------------------------------------ |
+| `export-result`           | Output from the export command       |
+| `report-result`           | Output from the report command       |
+| `import-result`           | Output from the import command       |
+| `source-changes`          | Number of items exported from source |
+| `target-changes-detected` | Number of changes detected on target |
+| `target-changes-imported` | Number of changes imported to target |
+
+## 🏗️ Architecture
+
+This action suite uses a modern, shared architecture that eliminates code
+duplication:
+
+### **Shared Utilities** (`src/shared/usync-utils.ts`)
+
+- **`executeUSyncCommand()`** - Centralized command execution with consistent
+  error handling
+- **`parseChangesFromOutput()`** - Standardized parsing of uSync CLI output
+- **`generateUSyncSummary()`** - Rich GitHub Actions job summaries with change
+  details
+- **`USyncExecutionResult`** - Unified result interface across all actions
+
+### **Action Types**
+
+- **Low-Level Invoke**: Flexible wrapper accepting raw CLI commands
+- **High-Level Specialized**: Purpose-built workflows using shared utilities
+
+### **Benefits**
+
+- ✅ Zero code duplication between actions
+- ✅ Consistent behavior and error handling
+- ✅ Maintainable - single source of truth for core functionality
+- ✅ Extensible - easy to add new specialized actions
 
 ## 🔐 Security Setup
 

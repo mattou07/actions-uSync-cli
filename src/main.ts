@@ -1,5 +1,7 @@
 import * as core from '@actions/core'
 import * as exec from '@actions/exec'
+import * as os from 'os'
+import * as path from 'path'
 
 /**
  * The main function for the uSync CLI action.
@@ -73,6 +75,13 @@ export async function run(): Promise<void> {
  * Installs uSync.Cli as a global .NET tool if it is not already present.
  */
 async function ensureUSyncCli(version: string): Promise<void> {
+  // The dotnet global tools directory is not always on PATH (e.g. on GitHub
+  // Actions runners when the tool is installed mid-job). Add it now so both
+  // the version check and the subsequent command invocation can find the binary.
+  const dotnetToolsDir = path.join(os.homedir(), '.dotnet', 'tools')
+  core.addPath(dotnetToolsDir) // persists for subsequent workflow steps
+  process.env.PATH = `${dotnetToolsDir}${path.delimiter}${process.env.PATH ?? ''}` // current process
+
   // Check if already installed
   const checkCode = await exec.exec('uSync', ['--version'], {
     ignoreReturnCode: true,

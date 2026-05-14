@@ -26183,6 +26183,8 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.run = run;
 const core = __importStar(__nccwpck_require__(2186));
 const exec = __importStar(__nccwpck_require__(1514));
+const os = __importStar(__nccwpck_require__(2037));
+const path = __importStar(__nccwpck_require__(1017));
 /**
  * The main function for the uSync CLI action.
  * Installs the CLI if not already present, then runs the requested command.
@@ -26243,6 +26245,12 @@ async function run() {
  * Installs uSync.Cli as a global .NET tool if it is not already present.
  */
 async function ensureUSyncCli(version) {
+    // The dotnet global tools directory is not always on PATH (e.g. on GitHub
+    // Actions runners when the tool is installed mid-job). Add it now so both
+    // the version check and the subsequent command invocation can find the binary.
+    const dotnetToolsDir = path.join(os.homedir(), '.dotnet', 'tools');
+    core.addPath(dotnetToolsDir); // persists for subsequent workflow steps
+    process.env.PATH = `${dotnetToolsDir}${path.delimiter}${process.env.PATH ?? ''}`; // current process
     // Check if already installed
     const checkCode = await exec.exec('uSync', ['--version'], {
         ignoreReturnCode: true,
