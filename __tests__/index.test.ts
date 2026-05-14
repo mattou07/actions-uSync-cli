@@ -1,17 +1,26 @@
 /**
- * Unit tests for the action's entrypoint, src/index.ts
+ * Unit tests for the action's entrypoints
  */
 
-import * as main from '../src/main'
+import * as setupMain from '../src/setup/main'
+import * as invokeMain from '../src/invoke/main'
 
-// Mock the action's entrypoint
-const runMock = jest.spyOn(main, 'run').mockImplementation()
+// Mock the action's entrypoints
+const setupRunMock = jest.spyOn(setupMain, 'run').mockImplementation()
+const invokeRunMock = jest.spyOn(invokeMain, 'run').mockImplementation()
 
-describe('index', () => {
-  it('calls run when imported', async () => {
+describe('action entrypoints', () => {
+  it('setup calls run when imported', async () => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    require('../src/index')
+    require('../src/setup/index')
 
-    expect(runMock).toHaveBeenCalled()
+    expect(setupRunMock).toHaveBeenCalled()
+  })
+
+  it('invoke calls run when imported', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    require('../src/invoke/index')
+
+    expect(invokeRunMock).toHaveBeenCalled()
   })
 })

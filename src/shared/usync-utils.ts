@@ -11,17 +11,21 @@ export interface USyncExecutionResult {
 }
 
 /**
- * Execute a uSync CLI command with standard parameters
+ * Execute a uSync CLI command with standard parameters.
+ * Uses OAuth2 client credentials (client-id + secret) for authentication.
+ * -s = server URL, -k = client ID, --secret = OAuth2 client secret
  */
 export async function executeUSyncCommand(
   command: string,
   server: string,
-  key: string,
-  set?: string,
-  group?: string,
+  clientId: string,
+  secret: string,
   force?: boolean,
   additionalArgs?: string
 ): Promise<USyncExecutionResult> {
+  // Mask secret so it never appears in logs
+  core.setSecret(secret)
+
   let output = ''
   let errorOutput = ''
 
@@ -35,25 +39,18 @@ export async function executeUSyncCommand(
   }
 
   // Build the command arguments
-  const args = [command, '-s', server, '-k', key]
-
-  if (set && set !== 'default') {
-    args.push('-set', set)
-  }
-
-  if (group && group !== 'all') {
-    args.push('-group', group)
-  }
+  const args = [command, '-s', server, '-k', clientId, '--secret', secret]
 
   if (force) {
-    args.push('-force')
+    args.push('--force')
   }
 
   if (additionalArgs) {
     args.push(...additionalArgs.split(' ').filter(arg => arg.trim()))
   }
 
-  const fullCommand = `uSync ${args.join(' ')}`
+  // Omit secret from logged command
+  const fullCommand = `uSync ${command} -s ${server} -k ${clientId} --secret [hidden]`
 
   try {
     core.info(`Executing: ${fullCommand}`)

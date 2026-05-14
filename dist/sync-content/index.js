@@ -26186,9 +26186,13 @@ exports.generateUSyncSummary = generateUSyncSummary;
 const core = __importStar(__nccwpck_require__(2186));
 const exec = __importStar(__nccwpck_require__(1514));
 /**
- * Execute a uSync CLI command with standard parameters
+ * Execute a uSync CLI command with standard parameters.
+ * Uses OAuth2 client credentials (client-id + secret) for authentication.
+ * -s = server URL, -k = client ID, --secret = OAuth2 client secret
  */
-async function executeUSyncCommand(command, server, key, set, group, force, additionalArgs) {
+async function executeUSyncCommand(command, server, clientId, secret, force, additionalArgs) {
+    // Mask secret so it never appears in logs
+    core.setSecret(secret);
     let output = '';
     let errorOutput = '';
     const listeners = {
@@ -26200,20 +26204,15 @@ async function executeUSyncCommand(command, server, key, set, group, force, addi
         }
     };
     // Build the command arguments
-    const args = [command, '-s', server, '-k', key];
-    if (set && set !== 'default') {
-        args.push('-set', set);
-    }
-    if (group && group !== 'all') {
-        args.push('-group', group);
-    }
+    const args = [command, '-s', server, '-k', clientId, '--secret', secret];
     if (force) {
-        args.push('-force');
+        args.push('--force');
     }
     if (additionalArgs) {
         args.push(...additionalArgs.split(' ').filter(arg => arg.trim()));
     }
-    const fullCommand = `uSync ${args.join(' ')}`;
+    // Omit secret from logged command
+    const fullCommand = `uSync ${command} -s ${server} -k ${clientId} --secret [hidden]`;
     try {
         core.info(`Executing: ${fullCommand}`);
         const exitCode = await exec.exec('uSync', args, {
@@ -26391,65 +26390,44 @@ const usync_utils_1 = __nccwpck_require__(7595);
 async function run() {
     try {
         const sourceServer = core.getInput('source-server');
-        const sourceKey = core.getInput('source-key');
+        const sourceClientId = core.getInput('source-client-id');
+        const sourceSecret = core.getInput('source-secret');
         const targetServer = core.getInput('target-server');
-        const targetKey = core.getInput('target-key');
-        const set = core.getInput('set');
+        const targetClientId = core.getInput('target-client-id');
+        const targetSecret = core.getInput('target-secret');
         const force = core.getInput('force') === 'true';
-        const reportFirst = core.getInput('report-first') === 'true';
         // Validate inputs
-        if (!sourceServer || !sourceKey || !targetServer || !targetKey) {
-            throw new Error('Source and target server URLs and HMAC keys are required');
+        if (!sourceServer ||
+            !sourceClientId ||
+            !sourceSecret ||
+            !targetServer ||
+            !targetClientId ||
+            !targetSecret) {
+            throw new Error('Source and target server URLs, client IDs, and secrets are required');
         }
         core.info('🔄 Starting content sync process...');
         const results = [];
         let exportResult;
         let importResult;
-        let reportResult;
         // Step 1: Export from source
         core.info('📤 Exporting content from source environment...');
-        exportResult = await (0, usync_utils_1.executeUSyncCommand)('run export', sourceServer, sourceKey, set, 'content');
+        exportResult = await (0, usync_utils_1.executeUSyncCommand)('usync-export', sourceServer, sourceClientId, sourceSecret);
         results.push(exportResult);
         if (!exportResult.success) {
             throw new Error(`Export failed: ${exportResult.errorOutput}`);
         }
         core.info(`📤 Export completed: ${exportResult.changes} content items exported`);
-        // Step 2: Run report on target if requested
-        if (reportFirst) {
-            core.info('📋 Checking for changes on target environment...');
-            reportResult = await (0, usync_utils_1.executeUSyncCommand)('run report', targetServer, targetKey, set, 'content');
-            results.push(reportResult);
-            if (!reportResult.success) {
-                throw new Error(`Report failed: ${reportResult.errorOutput}`);
-            }
-            core.info(`📋 Report completed: ${reportResult.changes} content changes detected on target`);
-            if (reportResult.changes === 0) {
-                core.info('✅ No content changes detected on target - sync not needed');
-                // Set outputs
-                core.setOutput('export-result', exportResult.output);
-                core.setOutput('report-result', reportResult.output);
-                core.setOutput('import-result', 'No import needed - no changes detected');
-                core.setOutput('source-changes', exportResult.changes);
-                core.setOutput('target-changes-detected', 0);
-                core.setOutput('target-changes-imported', 0);
-                core.setOutput('success', true);
-                await (0, usync_utils_1.generateUSyncSummary)('Content Sync', results, 'No changes detected on target - sync skipped');
-                return;
-            }
-        }
-        // Step 3: Import to target
+        // Step 2: Import to target
         core.info('📥 Importing content to target environment...');
-        importResult = await (0, usync_utils_1.executeUSyncCommand)('run import', targetServer, targetKey, set, 'content', force);
+        importResult = await (0, usync_utils_1.executeUSyncCommand)('usync-import', targetServer, targetClientId, targetSecret, force);
         results.push(importResult);
         if (!importResult.success) {
             throw new Error(`Import failed: ${importResult.errorOutput}`);
         }
         // Set outputs
         core.setOutput('export-result', exportResult.output);
-        core.setOutput('report-result', reportResult?.output || '');
         core.setOutput('import-result', importResult.output);
         core.setOutput('source-changes', exportResult.changes);
-        core.setOutput('target-changes-detected', reportResult?.changes || 0);
         core.setOutput('target-changes-imported', importResult.changes);
         core.setOutput('success', true);
         // Generate summary

@@ -1,0 +1,51 @@
+name: 'uSync CLI'
+description: 'Run any uSync CLI command against an Umbraco instance'
+author: 'mattou07'
+
+branding:
+  icon: 'refresh-cw'
+  color: 'blue'
+
+inputs:
+  server:
+    description: 'URL of the Umbraco server'
+    required: true
+
+  client-id:
+    description: 'OAuth2 client ID for authentication'
+    required: true
+
+  secret:
+    description: 'OAuth2 client secret for authentication'
+    required: true
+
+  command:
+    description:
+      'uSync CLI command to run (e.g., usync-import, usync-export, usync-ping,
+      cache-rebuild, models-rebuild)'
+    required: true
+
+  usync-version:
+    description: 'Version of uSync CLI to install (e.g., 16.0.0) or "latest"'
+    required: false
+    default: 'latest'
+
+  additional-args:
+    description:
+      'Additional arguments to pass to the CLI command (e.g., --force)'
+    required: false
+    default: ''
+
+outputs:
+  success:
+    description: 'Whether the command succeeded'
+
+  exit-code:
+    description: 'Exit code from the CLI command'
+
+  output:
+    description: 'Standard output from the CLI command'
+
+runs:
+  using: node20
+  main: dist/index.js

@@ -12,72 +12,26 @@ import {
 export async function run(): Promise<void> {
   try {
     const server = core.getInput('server')
-    const key = core.getInput('key')
-    const set = core.getInput('set')
+    const clientId = core.getInput('client-id')
+    const secret = core.getInput('secret')
     const force = core.getInput('force') === 'true'
-    const reportFirst = core.getInput('report-first') === 'true'
 
     // Validate inputs
-    if (!server || !key) {
-      throw new Error('Server URL and HMAC key are required')
+    if (!server || !clientId || !secret) {
+      throw new Error('Server URL, client-id, and secret are required')
     }
 
     core.info('📄 Starting content import process...')
 
     const results: USyncExecutionResult[] = []
-    let reportResult: USyncExecutionResult | undefined
-    let importResult: USyncExecutionResult | undefined
 
-    // Step 1: Run report if requested
-    if (reportFirst) {
-      core.info('📋 Checking for content changes...')
-      reportResult = await executeUSyncCommand(
-        'run report',
-        server,
-        key,
-        set,
-        'content'
-      )
-      results.push(reportResult)
-
-      if (!reportResult.success) {
-        throw new Error(`Report failed: ${reportResult.errorOutput}`)
-      }
-
-      core.info(
-        `📋 Report completed: ${reportResult.changes} content changes detected`
-      )
-
-      if (reportResult.changes === 0) {
-        core.info('✅ No content changes detected - import not needed')
-
-        // Set outputs
-        core.setOutput('report-result', reportResult.output)
-        core.setOutput(
-          'import-result',
-          'No import needed - no changes detected'
-        )
-        core.setOutput('changes-detected', 0)
-        core.setOutput('changes-imported', 0)
-        core.setOutput('success', true)
-
-        await generateUSyncSummary(
-          'Content Import',
-          results,
-          'No changes detected - import skipped'
-        )
-        return
-      }
-    }
-
-    // Step 2: Perform import
+    // Perform import
     core.info('📥 Importing content...')
-    importResult = await executeUSyncCommand(
-      'run import',
+    const importResult = await executeUSyncCommand(
+      'usync-import',
       server,
-      key,
-      set,
-      'content',
+      clientId,
+      secret,
       force
     )
     results.push(importResult)
@@ -87,9 +41,7 @@ export async function run(): Promise<void> {
     }
 
     // Set outputs
-    core.setOutput('report-result', reportResult?.output || '')
     core.setOutput('import-result', importResult.output)
-    core.setOutput('changes-detected', reportResult?.changes || 0)
     core.setOutput('changes-imported', importResult.changes)
     core.setOutput('success', true)
 
@@ -105,7 +57,6 @@ export async function run(): Promise<void> {
 
     // Set failure outputs
     core.setOutput('success', false)
-    core.setOutput('changes-detected', 0)
     core.setOutput('changes-imported', 0)
   }
 }

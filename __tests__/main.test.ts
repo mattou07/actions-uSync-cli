@@ -1,44 +1,49 @@
 /**
- * Unit tests for the action's main functionality, src/main.ts
- *
- * These should be run as if the action was called from a workflow.
- * Specifically, the inputs listed in `action.yml` should be set as environment
- * variables following the pattern `INPUT_<INPUT_NAME>`.
+ * Unit tests for the root generic invoke action, src/main.ts
  */
 
 import * as core from '@actions/core'
+import * as exec from '@actions/exec'
 import * as main from '../src/main'
 
 // Mock the action's main function
 const runMock = jest.spyOn(main, 'run')
 
-// Other utilities
-const timeRegex = /^\d{2}:\d{2}:\d{2}/
-
-// Mock the GitHub Actions core library
-let debugMock: jest.SpiedFunction<typeof core.debug>
-let errorMock: jest.SpiedFunction<typeof core.error>
+// Mock the GitHub Actions core and exec libraries
 let getInputMock: jest.SpiedFunction<typeof core.getInput>
 let setFailedMock: jest.SpiedFunction<typeof core.setFailed>
 let setOutputMock: jest.SpiedFunction<typeof core.setOutput>
+let setSecretMock: jest.SpiedFunction<typeof core.setSecret>
+let infoMock: jest.SpiedFunction<typeof core.info>
+let execMock: jest.SpiedFunction<typeof exec.exec>
 
-describe('action', () => {
+describe('run', () => {
   beforeEach(() => {
     jest.clearAllMocks()
 
-    debugMock = jest.spyOn(core, 'debug').mockImplementation()
-    errorMock = jest.spyOn(core, 'error').mockImplementation()
     getInputMock = jest.spyOn(core, 'getInput').mockImplementation()
     setFailedMock = jest.spyOn(core, 'setFailed').mockImplementation()
     setOutputMock = jest.spyOn(core, 'setOutput').mockImplementation()
+    setSecretMock = jest.spyOn(core, 'setSecret').mockImplementation()
+    infoMock = jest.spyOn(core, 'info').mockImplementation()
+    execMock = jest
+      .spyOn(exec, 'exec')
+      .mockImplementation(async () => 0) as jest.SpiedFunction<typeof exec.exec>
   })
 
-  it('sets the time output', async () => {
-    // Set the action's inputs as return values from core.getInput()
-    getInputMock.mockImplementation(name => {
+  it('executes the uSync command with correct arguments on success', async () => {
+    getInputMock.mockImplementation((name: string) => {
       switch (name) {
-        case 'milliseconds':
-          return '500'
+        case 'server':
+          return 'https://example.com'
+        case 'client-id':
+          return 'my-client-id'
+        case 'secret':
+          return 'my-secret'
+        case 'command':
+          return 'usync-ping'
+        case 'additional-args':
+          return ''
         default:
           return ''
       }
@@ -47,43 +52,104 @@ describe('action', () => {
     await main.run()
     expect(runMock).toHaveReturned()
 
-    // Verify that all of the core library functions were called correctly
-    expect(debugMock).toHaveBeenNthCalledWith(1, 'Waiting 500 milliseconds ...')
-    expect(debugMock).toHaveBeenNthCalledWith(
-      2,
-      expect.stringMatching(timeRegex)
+    expect(setSecretMock).toHaveBeenCalledWith('my-secret')
+    expect(execMock).toHaveBeenCalledWith(
+      'uSync',
+      [
+        'usync-ping',
+        '-s',
+        'https://example.com',
+        '-k',
+        'my-client-id',
+        '--secret',
+        'my-secret'
+      ],
+      expect.objectContaining({ ignoreReturnCode: true })
     )
-    expect(debugMock).toHaveBeenNthCalledWith(
-      3,
-      expect.stringMatching(timeRegex)
-    )
-    expect(setOutputMock).toHaveBeenNthCalledWith(
-      1,
-      'time',
-      expect.stringMatching(timeRegex)
-    )
-    expect(errorMock).not.toHaveBeenCalled()
+    expect(setOutputMock).toHaveBeenCalledWith('success', true)
+    expect(setOutputMock).toHaveBeenCalledWith('exit-code', 0)
+    expect(setFailedMock).not.toHaveBeenCalled()
   })
 
-  it('sets a failed status', async () => {
-    // Set the action's inputs as return values from core.getInput()
-    getInputMock.mockImplementation(name => {
+  it('passes additional-args to the CLI', async () => {
+    getInputMock.mockImplementation((name: string) => {
       switch (name) {
-        case 'milliseconds':
-          return 'this is not a number'
+        case 'server':
+          return 'https://example.com'
+        case 'client-id':
+          return 'my-client-id'
+        case 'secret':
+          return 'my-secret'
+        case 'command':
+          return 'usync-import'
+        case 'additional-args':
+          return '--force'
         default:
           return ''
       }
     })
 
     await main.run()
-    expect(runMock).toHaveReturned()
 
-    // Verify that all of the core library functions were called correctly
-    expect(setFailedMock).toHaveBeenNthCalledWith(
-      1,
-      'milliseconds not a number'
+    expect(execMock).toHaveBeenCalledWith(
+      'uSync',
+      [
+        'usync-import',
+        '-s',
+        'https://example.com',
+        '-k',
+        'my-client-id',
+        '--secret',
+        'my-secret',
+        '--force'
+      ],
+      expect.objectContaining({ ignoreReturnCode: true })
     )
-    expect(errorMock).not.toHaveBeenCalled()
+  })
+
+  it('calls setFailed when the command exits with a non-zero code', async () => {
+    getInputMock.mockImplementation((name: string) => {
+      switch (name) {
+        case 'server':
+          return 'https://example.com'
+        case 'client-id':
+          return 'my-client-id'
+        case 'secret':
+          return 'my-secret'
+        case 'command':
+          return 'usync-import'
+        case 'additional-args':
+          return ''
+        default:
+          return ''
+      }
+    })
+    // First call: uSync --version check (already installed → 0)
+    // Second call: uSync usync-import (fails → 1)
+    execMock
+      .mockResolvedValueOnce(0) // version check
+      .mockResolvedValueOnce(1) // command execution
+
+    await main.run()
+
+    expect(setOutputMock).toHaveBeenCalledWith('success', false)
+    expect(setFailedMock).toHaveBeenCalledWith(
+      expect.stringContaining('usync-import')
+    )
+  })
+
+  it('calls setFailed when required inputs are missing', async () => {
+    getInputMock.mockImplementation(
+      (name: string, options?: core.InputOptions) => {
+        if (options?.required) {
+          throw new Error(`Input required and not supplied: ${name}`)
+        }
+        return ''
+      }
+    )
+
+    await main.run()
+
+    expect(setFailedMock).toHaveBeenCalled()
   })
 })

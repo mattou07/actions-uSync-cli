@@ -26191,20 +26191,20 @@ async function run() {
     try {
         const command = core.getInput('command');
         const server = core.getInput('server');
-        const key = core.getInput('key');
-        const set = core.getInput('set');
+        const clientId = core.getInput('client-id');
+        const secret = core.getInput('secret');
         const force = core.getInput('force') === 'true';
-        const mode = core.getInput('mode');
+        const additionalArgs = core.getInput('additional-args');
         // Validate inputs
         if (!command) {
             throw new Error('Command is required');
         }
-        if (!server || !key) {
-            throw new Error('Server URL and HMAC key are required');
+        if (!server || !clientId || !secret) {
+            throw new Error('Server URL, client-id, and secret are required');
         }
         core.info(`🚀 Executing uSync command: ${command}`);
         // Execute the command using shared utilities
-        const result = await (0, usync_utils_1.executeUSyncCommand)(command, server, key, set, mode, force);
+        const result = await (0, usync_utils_1.executeUSyncCommand)(command, server, clientId, secret, force, additionalArgs);
         if (!result.success) {
             throw new Error(`Command failed: ${result.errorOutput}`);
         }
@@ -26264,9 +26264,13 @@ exports.generateUSyncSummary = generateUSyncSummary;
 const core = __importStar(__nccwpck_require__(2186));
 const exec = __importStar(__nccwpck_require__(1514));
 /**
- * Execute a uSync CLI command with standard parameters
+ * Execute a uSync CLI command with standard parameters.
+ * Uses OAuth2 client credentials (client-id + secret) for authentication.
+ * -s = server URL, -k = client ID, --secret = OAuth2 client secret
  */
-async function executeUSyncCommand(command, server, key, set, group, force, additionalArgs) {
+async function executeUSyncCommand(command, server, clientId, secret, force, additionalArgs) {
+    // Mask secret so it never appears in logs
+    core.setSecret(secret);
     let output = '';
     let errorOutput = '';
     const listeners = {
@@ -26278,20 +26282,15 @@ async function executeUSyncCommand(command, server, key, set, group, force, addi
         }
     };
     // Build the command arguments
-    const args = [command, '-s', server, '-k', key];
-    if (set && set !== 'default') {
-        args.push('-set', set);
-    }
-    if (group && group !== 'all') {
-        args.push('-group', group);
-    }
+    const args = [command, '-s', server, '-k', clientId, '--secret', secret];
     if (force) {
-        args.push('-force');
+        args.push('--force');
     }
     if (additionalArgs) {
         args.push(...additionalArgs.split(' ').filter(arg => arg.trim()));
     }
-    const fullCommand = `uSync ${args.join(' ')}`;
+    // Omit secret from logged command
+    const fullCommand = `uSync ${command} -s ${server} -k ${clientId} --secret [hidden]`;
     try {
         core.info(`Executing: ${fullCommand}`);
         const exitCode = await exec.exec('uSync', args, {

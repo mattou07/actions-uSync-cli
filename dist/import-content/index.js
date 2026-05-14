@@ -26215,50 +26215,24 @@ const usync_utils_1 = __nccwpck_require__(7595);
 async function run() {
     try {
         const server = core.getInput('server');
-        const key = core.getInput('key');
-        const set = core.getInput('set');
+        const clientId = core.getInput('client-id');
+        const secret = core.getInput('secret');
         const force = core.getInput('force') === 'true';
-        const reportFirst = core.getInput('report-first') === 'true';
         // Validate inputs
-        if (!server || !key) {
-            throw new Error('Server URL and HMAC key are required');
+        if (!server || !clientId || !secret) {
+            throw new Error('Server URL, client-id, and secret are required');
         }
         core.info('📄 Starting content import process...');
         const results = [];
-        let reportResult;
-        let importResult;
-        // Step 1: Run report if requested
-        if (reportFirst) {
-            core.info('📋 Checking for content changes...');
-            reportResult = await (0, usync_utils_1.executeUSyncCommand)('run report', server, key, set, 'content');
-            results.push(reportResult);
-            if (!reportResult.success) {
-                throw new Error(`Report failed: ${reportResult.errorOutput}`);
-            }
-            core.info(`📋 Report completed: ${reportResult.changes} content changes detected`);
-            if (reportResult.changes === 0) {
-                core.info('✅ No content changes detected - import not needed');
-                // Set outputs
-                core.setOutput('report-result', reportResult.output);
-                core.setOutput('import-result', 'No import needed - no changes detected');
-                core.setOutput('changes-detected', 0);
-                core.setOutput('changes-imported', 0);
-                core.setOutput('success', true);
-                await (0, usync_utils_1.generateUSyncSummary)('Content Import', results, 'No changes detected - import skipped');
-                return;
-            }
-        }
-        // Step 2: Perform import
+        // Perform import
         core.info('📥 Importing content...');
-        importResult = await (0, usync_utils_1.executeUSyncCommand)('run import', server, key, set, 'content', force);
+        const importResult = await (0, usync_utils_1.executeUSyncCommand)('usync-import', server, clientId, secret, force);
         results.push(importResult);
         if (!importResult.success) {
             throw new Error(`Import failed: ${importResult.errorOutput}`);
         }
         // Set outputs
-        core.setOutput('report-result', reportResult?.output || '');
         core.setOutput('import-result', importResult.output);
-        core.setOutput('changes-detected', reportResult?.changes || 0);
         core.setOutput('changes-imported', importResult.changes);
         core.setOutput('success', true);
         // Generate summary
@@ -26271,7 +26245,6 @@ async function run() {
         core.setFailed(errorMessage);
         // Set failure outputs
         core.setOutput('success', false);
-        core.setOutput('changes-detected', 0);
         core.setOutput('changes-imported', 0);
     }
 }
@@ -26316,9 +26289,13 @@ exports.generateUSyncSummary = generateUSyncSummary;
 const core = __importStar(__nccwpck_require__(2186));
 const exec = __importStar(__nccwpck_require__(1514));
 /**
- * Execute a uSync CLI command with standard parameters
+ * Execute a uSync CLI command with standard parameters.
+ * Uses OAuth2 client credentials (client-id + secret) for authentication.
+ * -s = server URL, -k = client ID, --secret = OAuth2 client secret
  */
-async function executeUSyncCommand(command, server, key, set, group, force, additionalArgs) {
+async function executeUSyncCommand(command, server, clientId, secret, force, additionalArgs) {
+    // Mask secret so it never appears in logs
+    core.setSecret(secret);
     let output = '';
     let errorOutput = '';
     const listeners = {
@@ -26330,20 +26307,15 @@ async function executeUSyncCommand(command, server, key, set, group, force, addi
         }
     };
     // Build the command arguments
-    const args = [command, '-s', server, '-k', key];
-    if (set && set !== 'default') {
-        args.push('-set', set);
-    }
-    if (group && group !== 'all') {
-        args.push('-group', group);
-    }
+    const args = [command, '-s', server, '-k', clientId, '--secret', secret];
     if (force) {
-        args.push('-force');
+        args.push('--force');
     }
     if (additionalArgs) {
         args.push(...additionalArgs.split(' ').filter(arg => arg.trim()));
     }
-    const fullCommand = `uSync ${args.join(' ')}`;
+    // Omit secret from logged command
+    const fullCommand = `uSync ${command} -s ${server} -k ${clientId} --secret [hidden]`;
     try {
         core.info(`Executing: ${fullCommand}`);
         const exitCode = await exec.exec('uSync', args, {

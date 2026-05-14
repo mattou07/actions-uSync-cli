@@ -12,17 +12,24 @@ import {
 export async function run(): Promise<void> {
   try {
     const sourceServer = core.getInput('source-server')
-    const sourceKey = core.getInput('source-key')
+    const sourceClientId = core.getInput('source-client-id')
+    const sourceSecret = core.getInput('source-secret')
     const targetServer = core.getInput('target-server')
-    const targetKey = core.getInput('target-key')
-    const set = core.getInput('set')
+    const targetClientId = core.getInput('target-client-id')
+    const targetSecret = core.getInput('target-secret')
     const force = core.getInput('force') === 'true'
-    const reportFirst = core.getInput('report-first') === 'true'
 
     // Validate inputs
-    if (!sourceServer || !sourceKey || !targetServer || !targetKey) {
+    if (
+      !sourceServer ||
+      !sourceClientId ||
+      !sourceSecret ||
+      !targetServer ||
+      !targetClientId ||
+      !targetSecret
+    ) {
       throw new Error(
-        'Source and target server URLs and HMAC keys are required'
+        'Source and target server URLs, client IDs, and secrets are required'
       )
     }
 
@@ -31,16 +38,14 @@ export async function run(): Promise<void> {
     const results: USyncExecutionResult[] = []
     let exportResult: USyncExecutionResult | undefined
     let importResult: USyncExecutionResult | undefined
-    let reportResult: USyncExecutionResult | undefined
 
     // Step 1: Export from source
     core.info('📤 Exporting content from source environment...')
     exportResult = await executeUSyncCommand(
-      'run export',
+      'usync-export',
       sourceServer,
-      sourceKey,
-      set,
-      'content'
+      sourceClientId,
+      sourceSecret
     )
     results.push(exportResult)
 
@@ -52,58 +57,13 @@ export async function run(): Promise<void> {
       `📤 Export completed: ${exportResult.changes} content items exported`
     )
 
-    // Step 2: Run report on target if requested
-    if (reportFirst) {
-      core.info('📋 Checking for changes on target environment...')
-      reportResult = await executeUSyncCommand(
-        'run report',
-        targetServer,
-        targetKey,
-        set,
-        'content'
-      )
-      results.push(reportResult)
-
-      if (!reportResult.success) {
-        throw new Error(`Report failed: ${reportResult.errorOutput}`)
-      }
-
-      core.info(
-        `📋 Report completed: ${reportResult.changes} content changes detected on target`
-      )
-
-      if (reportResult.changes === 0) {
-        core.info('✅ No content changes detected on target - sync not needed')
-
-        // Set outputs
-        core.setOutput('export-result', exportResult.output)
-        core.setOutput('report-result', reportResult.output)
-        core.setOutput(
-          'import-result',
-          'No import needed - no changes detected'
-        )
-        core.setOutput('source-changes', exportResult.changes)
-        core.setOutput('target-changes-detected', 0)
-        core.setOutput('target-changes-imported', 0)
-        core.setOutput('success', true)
-
-        await generateUSyncSummary(
-          'Content Sync',
-          results,
-          'No changes detected on target - sync skipped'
-        )
-        return
-      }
-    }
-
-    // Step 3: Import to target
+    // Step 2: Import to target
     core.info('📥 Importing content to target environment...')
     importResult = await executeUSyncCommand(
-      'run import',
+      'usync-import',
       targetServer,
-      targetKey,
-      set,
-      'content',
+      targetClientId,
+      targetSecret,
       force
     )
     results.push(importResult)
@@ -114,10 +74,8 @@ export async function run(): Promise<void> {
 
     // Set outputs
     core.setOutput('export-result', exportResult.output)
-    core.setOutput('report-result', reportResult?.output || '')
     core.setOutput('import-result', importResult.output)
     core.setOutput('source-changes', exportResult.changes)
-    core.setOutput('target-changes-detected', reportResult?.changes || 0)
     core.setOutput('target-changes-imported', importResult.changes)
     core.setOutput('success', true)
 

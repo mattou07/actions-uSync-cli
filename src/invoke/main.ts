@@ -9,17 +9,17 @@ export async function run(): Promise<void> {
   try {
     const command = core.getInput('command')
     const server = core.getInput('server')
-    const key = core.getInput('key')
-    const set = core.getInput('set')
+    const clientId = core.getInput('client-id')
+    const secret = core.getInput('secret')
     const force = core.getInput('force') === 'true'
-    const mode = core.getInput('mode')
+    const additionalArgs = core.getInput('additional-args')
 
     // Validate inputs
     if (!command) {
       throw new Error('Command is required')
     }
-    if (!server || !key) {
-      throw new Error('Server URL and HMAC key are required')
+    if (!server || !clientId || !secret) {
+      throw new Error('Server URL, client-id, and secret are required')
     }
 
     core.info(`🚀 Executing uSync command: ${command}`)
@@ -28,10 +28,10 @@ export async function run(): Promise<void> {
     const result = await executeUSyncCommand(
       command,
       server,
-      key,
-      set,
-      mode,
-      force
+      clientId,
+      secret,
+      force,
+      additionalArgs
     )
 
     if (!result.success) {
