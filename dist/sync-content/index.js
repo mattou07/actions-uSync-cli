@@ -26203,8 +26203,8 @@ async function executeUSyncCommand(command, server, clientId, secret, force, add
             errorOutput += data.toString();
         }
     };
-    // Build the command arguments
-    const args = [command, '-s', server, '-k', clientId, '--secret', secret];
+    // Build the command arguments: -s <server>, -s <secret>, -k <clientId>
+    const args = [command, '-s', server, '-s', secret, '-k', clientId];
     if (force) {
         args.push('--force');
     }

@@ -54,15 +54,15 @@ describe('run', () => {
 
     expect(setSecretMock).toHaveBeenCalledWith('my-secret')
     expect(execMock).toHaveBeenCalledWith(
-      'uSync',
+      'uSyncCli',
       [
         'usync-ping',
         '-s',
         'https://example.com',
+        '-s',
+        'my-secret',
         '-k',
-        'my-client-id',
-        '--secret',
-        'my-secret'
+        'my-client-id'
       ],
       expect.objectContaining({ ignoreReturnCode: true })
     )
@@ -92,15 +92,15 @@ describe('run', () => {
     await main.run()
 
     expect(execMock).toHaveBeenCalledWith(
-      'uSync',
+      'uSyncCli',
       [
         'usync-import',
         '-s',
         'https://example.com',
+        '-s',
+        'my-secret',
         '-k',
         'my-client-id',
-        '--secret',
-        'my-secret',
         '--force'
       ],
       expect.objectContaining({ ignoreReturnCode: true })

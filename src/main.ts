@@ -36,14 +36,14 @@ export async function run(): Promise<void> {
       }
     }
 
-    // -s = server URL, -k = client ID, --secret = OAuth2 client secret
-    const args = [command, '-s', server, '-k', clientId, '--secret', secret]
+    // -s <server>, -s <secret>, -k <clientId>
+    const args = [command, '-s', server, '-s', secret, '-k', clientId]
 
     if (additionalArgs) {
       args.push(...additionalArgs.split(' ').filter(a => a.trim().length > 0))
     }
 
-    const exitCode = await exec.exec('uSync', args, {
+    const exitCode = await exec.exec('uSyncCli', args, {
       listeners,
       ignoreReturnCode: true
     })
@@ -83,7 +83,7 @@ async function ensureUSyncCli(version: string): Promise<void> {
   process.env.PATH = `${dotnetToolsDir}${path.delimiter}${process.env.PATH ?? ''}` // current process
 
   // Check if already installed
-  const checkCode = await exec.exec('uSync', ['--version'], {
+  const checkCode = await exec.exec('uSyncCli', ['--version'], {
     ignoreReturnCode: true,
     silent: true
   })

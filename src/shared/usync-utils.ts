@@ -38,8 +38,8 @@ export async function executeUSyncCommand(
     }
   }
 
-  // Build the command arguments
-  const args = [command, '-s', server, '-k', clientId, '--secret', secret]
+  // Build the command arguments: -s <server>, -s <secret>, -k <clientId>
+  const args = [command, '-s', server, '-s', secret, '-k', clientId]
 
   if (force) {
     args.push('--force')
