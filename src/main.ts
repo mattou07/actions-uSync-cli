@@ -2,6 +2,8 @@ import * as core from '@actions/core'
 import * as exec from '@actions/exec'
 import * as os from 'os'
 import * as path from 'path'
+import { getAccessToken } from './lib/auth'
+import { rebuildIndexes } from './lib/indexer'
 import { ping } from './lib/ping'
 
 /**
@@ -29,6 +31,42 @@ export async function run(): Promise<void> {
       core.setOutput('exit-code', 0)
       core.setOutput('output', '')
       core.info(`✅ Command '${command}' completed successfully`)
+      return
+    }
+
+    // indexer-rebuild is handled directly via HTTP — no dotnet CLI needed
+    if (command === 'indexer-rebuild') {
+      const indexNamesRaw = core.getInput('index-name')
+      const indexNames = indexNamesRaw.split(/[\s,]+/).filter(n => n.length > 0)
+      if (indexNames.length === 0) {
+        core.setFailed(
+          'The "index-name" input is required for the indexer-rebuild command'
+        )
+        return
+      }
+      core.info(
+        `🚀 Rebuilding ${indexNames.length} index(es): ${indexNames.join(', ')}`
+      )
+      const token = await getAccessToken(server, clientId, secret)
+      const results = await rebuildIndexes(server, token, indexNames)
+      const failed = results.filter(r => r.status === 'failed')
+      const notFound = results.filter(r => r.status === 'not-found')
+      core.setOutput('index-results', JSON.stringify(results))
+      core.setOutput('exit-code', failed.length > 0 ? 1 : 0)
+      if (failed.length > 0) {
+        core.setOutput('success', false)
+        core.setFailed(
+          `Rebuild failed for: ${failed.map(r => r.name).join(', ')}`
+        )
+      } else {
+        core.setOutput('success', true)
+        if (notFound.length > 0) {
+          core.warning(
+            `Indexes not found: ${notFound.map(r => r.name).join(', ')}`
+          )
+        }
+        core.info(`✅ Rebuild requested for all indexes`)
+      }
       return
     }
 

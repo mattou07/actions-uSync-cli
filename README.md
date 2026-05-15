@@ -6,6 +6,242 @@
 [![CodeQL](https://github.com/mattou07/actions-uSync-cli/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/mattou07/actions-uSync-cli/actions/workflows/codeql-analysis.yml)
 [![Coverage](./badges/coverage.svg)](./badges/coverage.svg)
 
+A single GitHub Action that runs uSync commands against your Umbraco instance
+using the Umbraco Management API. Common commands (`usync-ping`,
+`indexer-rebuild`) are executed as direct HTTP calls.
+
+## Prerequisites
+
+- An API user configured in Umbraco with a client ID and secret (see
+  [API user setup](#api-user-setup))
+- uSync installed on the target Umbraco site
+- .NET SDK on the runner **only if** you use CLI-based commands such as
+  `usync-import` or `usync-export` (add `actions/setup-dotnet` if your runner
+  doesn't have it)
+
+## Usage
+
+```yaml
+- uses: mattou07/actions-uSync-cli@v1
+  with:
+    server: ${{ vars.UMBRACO_URL }}
+    client-id: ${{ secrets.USYNC_CLIENT_ID }}
+    secret: ${{ secrets.USYNC_SECRET }}
+    command: usync-import
+```
+
+The `server` input accepts a bare hostname (`my-site.azurewebsites.net`) or a
+full URL — `https://` is added automatically if no protocol is present.
+
+## Inputs
+
+| Input             | Description                                          | Required | Default  |
+| ----------------- | ---------------------------------------------------- | -------- | -------- |
+| `server`          | URL or hostname of the Umbraco server                | ✅       | -        |
+| `client-id`       | OAuth2 client ID for the API user                    | ✅       | -        |
+| `secret`          | OAuth2 client secret for the API user                | ✅       | -        |
+| `command`         | uSync CLI command to run (see [Commands](#commands)) | ✅       | -        |
+| `index-name`      | Comma-separated index name(s) for `indexer-rebuild`  | ❌       | `""`     |
+| `usync-version`   | Version of uSync CLI to install, or `latest`         | ❌       | `latest` |
+| `additional-args` | Extra arguments appended to CLI-based commands       | ❌       | `""`     |
+
+## Outputs
+
+| Output          | Description                                           |
+| --------------- | ----------------------------------------------------- |
+| `success`       | `true` if the command completed without errors        |
+| `exit-code`     | Exit code (`0` = success, `1` = failure)              |
+| `output`        | Combined stdout/stderr for CLI-based commands         |
+| `index-results` | JSON array of per-index results for `indexer-rebuild` |
+
+## Commands
+
+| Command           | Implementation | Description                                 |
+| ----------------- | -------------- | ------------------------------------------- |
+| `usync-ping`      | Native HTTP    | Poll until the Umbraco back-office responds |
+| `indexer-rebuild` | Native HTTP    | Trigger one or more search index rebuilds   |
+| `usync-import`    | uSync CLI      | Import all uSync items into Umbraco         |
+| `usync-export`    | uSync CLI      | Export all uSync items from Umbraco         |
+| `usync-report`    | uSync CLI      | Report pending changes without applying     |
+| `cache-rebuild`   | uSync CLI      | Rebuild the Umbraco cache                   |
+| `models-rebuild`  | uSync CLI      | Rebuild generated models                    |
+
+**Native HTTP** commands call the Umbraco Management API directly — no .NET
+tooling required. **uSync CLI** commands install `uSync.Cli` as a global .NET
+tool on first run.
+
+## YAML Examples
+
+### Ping — wait for the site to be ready
+
+Blocks subsequent steps until Umbraco is responding. Retries automatically
+(default 10 attempts) before failing.
+
+```yaml
+- name: Wait for Umbraco
+  uses: mattou07/actions-uSync-cli@v1
+  with:
+    server: ${{ vars.UMBRACO_URL }}
+    client-id: ${{ secrets.USYNC_CLIENT_ID }}
+    secret: ${{ secrets.USYNC_SECRET }}
+    command: usync-ping
+```
+
+### Indexer rebuild — trigger one or more indexes
+
+Pass a comma-separated list of index names. Missing indexes produce a warning
+and do not fail the action. Umbraco processes rebuilds asynchronously — the
+action does not wait for completion.
+
+```yaml
+- name: Rebuild search indexes
+  uses: mattou07/actions-uSync-cli@v1
+  with:
+    server: ${{ vars.UMBRACO_URL }}
+    client-id: ${{ secrets.USYNC_CLIENT_ID }}
+    secret: ${{ secrets.USYNC_SECRET }}
+    command: indexer-rebuild
+    index-name: 'ExternalIndex, InternalIndex'
+```
+
+Inspect the per-index outcome from a later step:
+
+```yaml
+- name: Print index results
+  run: echo '${{ steps.rebuild.outputs.index-results }}'
+```
+
+### Report — check what would change without applying anything
+
+```yaml
+- name: uSync Report
+  uses: mattou07/actions-uSync-cli@v1
+  with:
+    server: ${{ vars.UMBRACO_URL }}
+    client-id: ${{ secrets.USYNC_CLIENT_ID }}
+    secret: ${{ secrets.USYNC_SECRET }}
+    command: usync-report
+```
+
+### Import — apply uSync changes
+
+```yaml
+- name: uSync Import
+  uses: mattou07/actions-uSync-cli@v1
+  with:
+    server: ${{ vars.UMBRACO_URL }}
+    client-id: ${{ secrets.USYNC_CLIENT_ID }}
+    secret: ${{ secrets.USYNC_SECRET }}
+    command: usync-import
+    additional-args: '--force'
+```
+
+## Complete Workflow Example
+
+A full pipeline that deploys an Umbraco site, waits for it to respond, rebuilds
+search indexes, and then synchronises uSync changes.
+
+```yaml
+name: Deploy and sync
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # ... your build and deploy steps here ...
+
+      - name: Wait for Umbraco to respond
+        uses: mattou07/actions-uSync-cli@v1
+        with:
+          server: ${{ vars.UMBRACO_URL }}
+          client-id: ${{ secrets.USYNC_CLIENT_ID }}
+          secret: ${{ secrets.USYNC_SECRET }}
+          command: usync-ping
+
+      - name: Rebuild search indexes
+        id: indexes
+        uses: mattou07/actions-uSync-cli@v1
+        with:
+          server: ${{ vars.UMBRACO_URL }}
+          client-id: ${{ secrets.USYNC_CLIENT_ID }}
+          secret: ${{ secrets.USYNC_SECRET }}
+          command: indexer-rebuild
+          index-name: 'ExternalIndex, InternalIndex'
+
+      - name: uSync Import
+        uses: mattou07/actions-uSync-cli@v1
+        with:
+          server: ${{ vars.UMBRACO_URL }}
+          client-id: ${{ secrets.USYNC_CLIENT_ID }}
+          secret: ${{ secrets.USYNC_SECRET }}
+          command: usync-import
+          additional-args: '--force'
+```
+
+### Using a specific CLI version
+
+Pin to a known-good version of the uSync CLI to avoid unexpected breakage from
+upstream releases (only relevant for CLI-based commands):
+
+```yaml
+- uses: mattou07/actions-uSync-cli@v1
+  with:
+    server: ${{ vars.UMBRACO_URL }}
+    client-id: ${{ secrets.USYNC_CLIENT_ID }}
+    secret: ${{ secrets.USYNC_SECRET }}
+    command: usync-import
+    usync-version: '16.0.0'
+```
+
+## API User Setup
+
+The action authenticates using Umbraco's Management API with OAuth2 client
+credentials.
+
+1. In the Umbraco back office go to **Users** and create a new API user
+2. Assign the user to a group with appropriate uSync permissions
+3. Generate a **client ID** and **client secret** for the user
+4. Store these as GitHub secrets and variables:
+
+```
+USYNC_CLIENT_ID=your-client-id
+USYNC_SECRET=your-client-secret
+UMBRACO_URL=https://your-site.com
+```
+
+Refer to the
+[uSync CLI documentation](https://github.com/Jumoo/uSync.CommandLine) for full
+details on API user configuration.
+
+## Development
+
+```bash
+npm install
+npm run all     # format, lint, test, and bundle
+npm test        # run tests only
+```
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+## Links
+
+- [uSync CLI](https://github.com/Jumoo/uSync.CommandLine)
+- [uSync Documentation](https://docs.jumoo.co.uk/usync/)
+- [Umbraco CMS](https://umbraco.com/)
+
 A single GitHub Action that installs the
 [uSync CLI](https://github.com/Jumoo/uSync.CommandLine) and runs any uSync
 command against your Umbraco instance. No separate setup step required.

@@ -36,6 +36,14 @@ inputs:
     required: false
     default: ''
 
+  index-name:
+    description:
+      'Comma-separated list of Umbraco index names to rebuild (e.g.
+      "ExternalIndex, InternalIndex"). Required for indexer-rebuild command.
+      Missing indexes are reported as warnings and do not fail the action.'
+    required: false
+    default: ''
+
 outputs:
   success:
     description: 'Whether the command succeeded'

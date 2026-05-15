@@ -26208,6 +26208,80 @@ async function getAccessToken(server, clientId, secret) {
 
 /***/ }),
 
+/***/ 1001:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.rebuildIndexes = rebuildIndexes;
+const core = __importStar(__nccwpck_require__(2186));
+const umbraco_client_1 = __nccwpck_require__(6941);
+/**
+ * Triggers a rebuild for each index name in parallel and returns a result per
+ * index. 404 responses are reported as warnings rather than errors so a missing
+ * index does not abort the remaining rebuilds.
+ *
+ * Umbraco processes rebuilds asynchronously — this function does not poll for
+ * completion; it simply fires the request and moves on.
+ *
+ * Reference: uSync.Commands/Index/IndexerRebuildCommand.cs
+ * Endpoint:  POST /umbraco/management/api/v1/indexer/{indexName}/rebuild
+ */
+async function rebuildIndexes(server, token, indexNames) {
+    const client = new umbraco_client_1.UmbracoClient(server, token);
+    const results = await Promise.all(indexNames.map(async (name) => {
+        const path = `umbraco/management/api/v1/indexer/${encodeURIComponent(name)}/rebuild`;
+        core.info(`🔨 Requesting rebuild of index "${name}"`);
+        try {
+            const response = await client.postRaw(path);
+            if (response.status === 404) {
+                core.warning(`Index "${name}" was not found on the server`);
+                return { name, status: 'not-found' };
+            }
+            if (!response.ok) {
+                const msg = `${response.status} ${response.statusText}`;
+                core.warning(`Rebuild request for "${name}" failed: ${msg}`);
+                return { name, status: 'failed', error: msg };
+            }
+            core.info(`✅ Rebuild requested for "${name}" (Umbraco will process asynchronously)`);
+            return { name, status: 'requested' };
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            core.warning(`Rebuild request for "${name}" failed: ${msg}`);
+            return { name, status: 'failed', error: msg };
+        }
+    }));
+    return results;
+}
+
+
+/***/ }),
+
 /***/ 2355:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -26274,6 +26348,70 @@ function delay(ms) {
 
 /***/ }),
 
+/***/ 6941:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.UmbracoClient = void 0;
+const auth_1 = __nccwpck_require__(753);
+/**
+ * Thin authenticated HTTP wrapper for the Umbraco Management API.
+ * Sets the Authorization header on every request and throws a descriptive
+ * error for any non-2xx response.
+ *
+ * Reference: UmbracoClient.Generated.cs (pattern, not the generated code)
+ */
+class UmbracoClient {
+    token;
+    base;
+    constructor(server, token) {
+        this.token = token;
+        this.base = (0, auth_1.normalizeServerUrl)(server);
+    }
+    /**
+     * POST and throw on any non-2xx response.
+     */
+    async post(path, body) {
+        const response = await this.postRaw(path, body);
+        if (!response.ok) {
+            const url = `${this.base}/${path.replace(/^\//, '')}`;
+            throw new Error(`POST ${url} failed: ${response.status} ${response.statusText}`);
+        }
+        return response;
+    }
+    /**
+     * POST and return the raw Response without throwing — callers handle status.
+     */
+    async postRaw(path, body) {
+        const url = `${this.base}/${path.replace(/^\//, '')}`;
+        return fetch(url, {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${this.token}`,
+                'Content-Type': 'application/json'
+            },
+            body: body !== undefined ? JSON.stringify(body) : ''
+        });
+    }
+    async get(path) {
+        const url = `${this.base}/${path.replace(/^\//, '')}`;
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${this.token}` }
+        });
+        if (!response.ok) {
+            throw new Error(`GET ${url} failed: ${response.status} ${response.statusText}`);
+        }
+        return response;
+    }
+}
+exports.UmbracoClient = UmbracoClient;
+
+
+/***/ }),
+
 /***/ 399:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -26308,6 +26446,8 @@ const core = __importStar(__nccwpck_require__(2186));
 const exec = __importStar(__nccwpck_require__(1514));
 const os = __importStar(__nccwpck_require__(2037));
 const path = __importStar(__nccwpck_require__(1017));
+const auth_1 = __nccwpck_require__(753);
+const indexer_1 = __nccwpck_require__(1001);
 const ping_1 = __nccwpck_require__(2355);
 /**
  * The main function for the uSync CLI action.
@@ -26332,6 +26472,34 @@ async function run() {
             core.setOutput('exit-code', 0);
             core.setOutput('output', '');
             core.info(`✅ Command '${command}' completed successfully`);
+            return;
+        }
+        // indexer-rebuild is handled directly via HTTP — no dotnet CLI needed
+        if (command === 'indexer-rebuild') {
+            const indexNamesRaw = core.getInput('index-name');
+            const indexNames = indexNamesRaw.split(/[\s,]+/).filter(n => n.length > 0);
+            if (indexNames.length === 0) {
+                core.setFailed('The "index-name" input is required for the indexer-rebuild command');
+                return;
+            }
+            core.info(`🚀 Rebuilding ${indexNames.length} index(es): ${indexNames.join(', ')}`);
+            const token = await (0, auth_1.getAccessToken)(server, clientId, secret);
+            const results = await (0, indexer_1.rebuildIndexes)(server, token, indexNames);
+            const failed = results.filter(r => r.status === 'failed');
+            const notFound = results.filter(r => r.status === 'not-found');
+            core.setOutput('index-results', JSON.stringify(results));
+            core.setOutput('exit-code', failed.length > 0 ? 1 : 0);
+            if (failed.length > 0) {
+                core.setOutput('success', false);
+                core.setFailed(`Rebuild failed for: ${failed.map(r => r.name).join(', ')}`);
+            }
+            else {
+                core.setOutput('success', true);
+                if (notFound.length > 0) {
+                    core.warning(`Indexes not found: ${notFound.map(r => r.name).join(', ')}`);
+                }
+                core.info(`✅ Rebuild requested for all indexes`);
+            }
             return;
         }
         // All other commands: ensure CLI is installed then exec
