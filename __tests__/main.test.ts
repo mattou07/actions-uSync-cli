@@ -31,7 +31,7 @@ describe('run', () => {
       .mockImplementation(async () => 0) as jest.SpiedFunction<typeof exec.exec>
   })
 
-  it('executes the uSync command with correct arguments on success', async () => {
+  it('handles usync-ping via HTTP without invoking the CLI', async () => {
     getInputMock.mockImplementation((name: string) => {
       switch (name) {
         case 'server':
@@ -49,22 +49,20 @@ describe('run', () => {
       }
     })
 
+    global.fetch = jest.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ access_token: 'test-token', token_type: 'Bearer' })
+    })
+
     await main.run()
     expect(runMock).toHaveReturned()
 
     expect(setSecretMock).toHaveBeenCalledWith('my-secret')
-    expect(execMock).toHaveBeenCalledWith(
-      'uSyncCli',
-      [
-        'usync-ping',
-        '-s',
-        'https://example.com',
-        '-s',
-        'my-secret',
-        '-k',
-        'my-client-id'
-      ],
-      expect.objectContaining({ ignoreReturnCode: true })
+    // usync-ping is pure HTTP — the CLI must never be invoked
+    expect(execMock).not.toHaveBeenCalled()
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://example.com/umbraco/management/api/v1/security/back-office/token',
+      expect.anything()
     )
     expect(setOutputMock).toHaveBeenCalledWith('success', true)
     expect(setOutputMock).toHaveBeenCalledWith('exit-code', 0)
@@ -97,9 +95,9 @@ describe('run', () => {
         'usync-import',
         '-s',
         'https://example.com',
-        '-s',
-        'my-secret',
         '-k',
+        'my-secret',
+        '-i',
         'my-client-id',
         '--force'
       ],

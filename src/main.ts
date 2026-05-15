@@ -2,6 +2,7 @@ import * as core from '@actions/core'
 import * as exec from '@actions/exec'
 import * as os from 'os'
 import * as path from 'path'
+import { ping } from './lib/ping'
 
 /**
  * The main function for the uSync CLI action.
@@ -20,6 +21,18 @@ export async function run(): Promise<void> {
     // Mask the secret so it never appears in logs
     core.setSecret(secret)
 
+    // usync-ping is handled directly via HTTP — no dotnet CLI needed
+    if (command === 'usync-ping') {
+      core.info(`🚀 Running uSync command: ${command}`)
+      await ping(server, clientId, secret)
+      core.setOutput('success', true)
+      core.setOutput('exit-code', 0)
+      core.setOutput('output', '')
+      core.info(`✅ Command '${command}' completed successfully`)
+      return
+    }
+
+    // All other commands: ensure CLI is installed then exec
     // Step 1: Ensure the uSync CLI is installed
     await ensureUSyncCli(usyncVersion)
 
@@ -36,8 +49,8 @@ export async function run(): Promise<void> {
       }
     }
 
-    // -s <server>, -s <secret>, -k <clientId>
-    const args = [command, '-s', server, '-s', secret, '-k', clientId]
+    // -s <server-url>, -k <secret>, -i <client-id>
+    const args = [command, '-s', server, '-k', secret, '-i', clientId]
 
     if (additionalArgs) {
       args.push(...additionalArgs.split(' ').filter(a => a.trim().length > 0))

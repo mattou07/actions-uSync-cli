@@ -26151,6 +26151,108 @@ exports["default"] = _default;
 
 /***/ }),
 
+/***/ 753:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.getAccessToken = getAccessToken;
+/**
+ * Obtains an OAuth2 bearer token from the Umbraco back-office token endpoint
+ * using the client credentials grant.
+ *
+ * Reference: uSync.Commands.Core/Http/HttpClientExtensions.cs GetAccessToken()
+ */
+async function getAccessToken(server, clientId, secret) {
+    const base = server.replace(/\/+$/, '');
+    const url = `${base}/umbraco/management/api/v1/security/back-office/token`;
+    const body = new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: clientId,
+        client_secret: secret
+    }).toString();
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body
+    });
+    if (!response.ok) {
+        throw new Error(`Failed to obtain access token: ${response.status} ${response.statusText}`);
+    }
+    const data = (await response.json());
+    return data.access_token;
+}
+
+
+/***/ }),
+
+/***/ 2355:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.ping = ping;
+const core = __importStar(__nccwpck_require__(2186));
+const auth_1 = __nccwpck_require__(753);
+/**
+ * Polls the Umbraco back-office token endpoint until it responds successfully,
+ * confirming the server is up and credentials are valid.
+ *
+ * Reference: uSync.Commands/uSync/uSyncPingCommand.cs
+ *
+ * @param retryDelayMs  Milliseconds to wait between attempts. Exposed for
+ *                      testing so tests can pass 0 and avoid real delays.
+ */
+async function ping(server, clientId, secret, retries = 10, retryDelayMs = 3000) {
+    core.info(`🔍 Pinging Umbraco at ${server} (up to ${retries} attempts)`);
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            await (0, auth_1.getAccessToken)(server, clientId, secret);
+            core.info(`✅ Umbraco is reachable (attempt ${attempt}/${retries})`);
+            return;
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            core.info(`⏳ Attempt ${attempt}/${retries} failed: ${message}`);
+            if (attempt < retries) {
+                await delay(retryDelayMs);
+            }
+        }
+    }
+    throw new Error(`Umbraco server at ${server} did not respond after ${retries} attempts`);
+}
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+
+/***/ }),
+
 /***/ 399:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -26185,6 +26287,7 @@ const core = __importStar(__nccwpck_require__(2186));
 const exec = __importStar(__nccwpck_require__(1514));
 const os = __importStar(__nccwpck_require__(2037));
 const path = __importStar(__nccwpck_require__(1017));
+const ping_1 = __nccwpck_require__(2355);
 /**
  * The main function for the uSync CLI action.
  * Installs the CLI if not already present, then runs the requested command.
@@ -26200,6 +26303,17 @@ async function run() {
         const additionalArgs = core.getInput('additional-args');
         // Mask the secret so it never appears in logs
         core.setSecret(secret);
+        // usync-ping is handled directly via HTTP — no dotnet CLI needed
+        if (command === 'usync-ping') {
+            core.info(`🚀 Running uSync command: ${command}`);
+            await (0, ping_1.ping)(server, clientId, secret);
+            core.setOutput('success', true);
+            core.setOutput('exit-code', 0);
+            core.setOutput('output', '');
+            core.info(`✅ Command '${command}' completed successfully`);
+            return;
+        }
+        // All other commands: ensure CLI is installed then exec
         // Step 1: Ensure the uSync CLI is installed
         await ensureUSyncCli(usyncVersion);
         // Step 2: Run the requested command
@@ -26213,8 +26327,8 @@ async function run() {
                 output += data.toString();
             }
         };
-        // -s <server>, -s <secret>, -k <clientId>
-        const args = [command, '-s', server, '-s', secret, '-k', clientId];
+        // -s <server-url>, -k <secret>, -i <client-id>
+        const args = [command, '-s', server, '-k', secret, '-i', clientId];
         if (additionalArgs) {
             args.push(...additionalArgs.split(' ').filter(a => a.trim().length > 0));
         }
