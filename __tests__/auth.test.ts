@@ -1,4 +1,39 @@
-import { getAccessToken } from '../src/lib/auth'
+import { getAccessToken, normalizeServerUrl } from '../src/lib/auth'
+
+describe('normalizeServerUrl', () => {
+  it('leaves a well-formed https URL unchanged (minus trailing slash)', () => {
+    expect(normalizeServerUrl('https://example.com')).toBe(
+      'https://example.com'
+    )
+  })
+
+  it('prepends https:// when no protocol is supplied', () => {
+    expect(normalizeServerUrl('example.com')).toBe('https://example.com')
+  })
+
+  it('prepends https:// for bare Azure hostnames', () => {
+    expect(normalizeServerUrl('wa-usync-cli-internal.azurewebsites.net')).toBe(
+      'https://wa-usync-cli-internal.azurewebsites.net'
+    )
+  })
+
+  it('strips trailing slashes after normalisation', () => {
+    expect(normalizeServerUrl('example.com/')).toBe('https://example.com')
+    expect(normalizeServerUrl('https://example.com/')).toBe(
+      'https://example.com'
+    )
+  })
+
+  it('preserves an explicit http:// protocol', () => {
+    expect(normalizeServerUrl('http://example.com')).toBe('http://example.com')
+  })
+
+  it('throws for a value that cannot form a valid URL', () => {
+    expect(() => normalizeServerUrl('not a url!!')).toThrow(
+      'Invalid server URL'
+    )
+  })
+})
 
 describe('getAccessToken', () => {
   beforeEach(() => {
@@ -45,13 +80,13 @@ describe('getAccessToken', () => {
     expect(body).toContain('client_secret=my-secret')
   })
 
-  it('strips a trailing slash from the server URL', async () => {
+  it('normalises a bare hostname by prepending https:// before fetching', async () => {
     ;(global.fetch as jest.Mock).mockResolvedValueOnce({
       ok: true,
       json: async () => ({ access_token: 'tok' })
     })
 
-    await getAccessToken('https://example.com/', 'id', 'secret')
+    await getAccessToken('example.com', 'id', 'secret')
 
     const url = (global.fetch as jest.Mock).mock.calls[0][0] as string
     expect(url).toBe(

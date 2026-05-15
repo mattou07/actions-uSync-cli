@@ -26157,7 +26157,28 @@ exports["default"] = _default;
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.normalizeServerUrl = normalizeServerUrl;
 exports.getAccessToken = getAccessToken;
+/**
+ * Normalises a server URL entered by the user:
+ * - Prepends `https://` when no protocol is present.
+ * - Strips trailing slashes.
+ * - Throws a descriptive error for anything that is still not a valid URL.
+ */
+function normalizeServerUrl(server) {
+    let base = server.trim();
+    if (!/^https?:\/\//i.test(base)) {
+        base = `https://${base}`;
+    }
+    base = base.replace(/\/+$/, '');
+    try {
+        new URL(base);
+    }
+    catch {
+        throw new Error(`Invalid server URL "${server}". Please provide a valid URL (e.g. https://my-site.com).`);
+    }
+    return base;
+}
 /**
  * Obtains an OAuth2 bearer token from the Umbraco back-office token endpoint
  * using the client credentials grant.
@@ -26165,7 +26186,7 @@ exports.getAccessToken = getAccessToken;
  * Reference: uSync.Commands.Core/Http/HttpClientExtensions.cs GetAccessToken()
  */
 async function getAccessToken(server, clientId, secret) {
-    const base = server.replace(/\/+$/, '');
+    const base = normalizeServerUrl(server);
     const url = `${base}/umbraco/management/api/v1/security/back-office/token`;
     const body = new URLSearchParams({
         grant_type: 'client_credentials',

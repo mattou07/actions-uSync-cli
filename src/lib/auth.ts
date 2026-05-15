@@ -1,4 +1,26 @@
 /**
+ * Normalises a server URL entered by the user:
+ * - Prepends `https://` when no protocol is present.
+ * - Strips trailing slashes.
+ * - Throws a descriptive error for anything that is still not a valid URL.
+ */
+export function normalizeServerUrl(server: string): string {
+  let base = server.trim()
+  if (!/^https?:\/\//i.test(base)) {
+    base = `https://${base}`
+  }
+  base = base.replace(/\/+$/, '')
+  try {
+    new URL(base)
+  } catch {
+    throw new Error(
+      `Invalid server URL "${server}". Please provide a valid URL (e.g. https://my-site.com).`
+    )
+  }
+  return base
+}
+
+/**
  * Obtains an OAuth2 bearer token from the Umbraco back-office token endpoint
  * using the client credentials grant.
  *
@@ -9,7 +31,7 @@ export async function getAccessToken(
   clientId: string,
   secret: string
 ): Promise<string> {
-  const base = server.replace(/\/+$/, '')
+  const base = normalizeServerUrl(server)
   const url = `${base}/umbraco/management/api/v1/security/back-office/token`
 
   const body = new URLSearchParams({
