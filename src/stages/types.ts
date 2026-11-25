@@ -8,6 +8,7 @@ export type StageStatus = 'success' | 'warning' | 'failed' | 'skipped'
 
 export type StageId =
   | 'connect'
+  | 'pre-report'
   | 'import'
   | 'report'
   | 'rebuild-cache'

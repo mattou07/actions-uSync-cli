@@ -2,6 +2,7 @@ import * as core from '@actions/core'
 import type { RebuildIndexesData } from '../stages/rebuild-indexes.js'
 import type { CheckConnectionsData } from '../stages/check-connections.js'
 import type { PerformData } from '../stages/import.js'
+import type { ReportData } from '../stages/report.js'
 import type { SiteInfo, StageResult, StageStatus } from '../stages/types.js'
 import type { USyncActionView } from '../types/usync.js'
 import { escapeHtml } from '../utils/safe-log.js'
@@ -100,7 +101,7 @@ function addPerformSection(
   }
 
   if (analysis.changes.length > 0) {
-    const withDiffs = stage.id === 'report'
+    const withDiffs = stage.id === 'report' || stage.id === 'pre-report'
     summary.addHeading(withDiffs ? 'Pending changes' : 'Changed items', 3)
     summary.addTable([
       headerRow('Handler', 'Item', 'Change', ...(withDiffs ? ['Details'] : [])),
@@ -112,6 +113,29 @@ function addPerformSection(
       ])
     ])
   }
+
+  if (stage.id === 'report') {
+    const { unapplied, appeared } = data as ReportData
+    addItemTable(summary, 'Not applied by the import', unapplied)
+    addItemTable(summary, 'Appeared after the import', appeared)
+  }
+}
+
+function addItemTable(
+  summary: typeof core.summary,
+  heading: string,
+  items: USyncActionView[] | undefined
+): void {
+  if (!items || items.length === 0) return
+  summary.addHeading(heading, 3)
+  summary.addTable([
+    headerRow('Handler', 'Item', 'Change'),
+    ...capped(items, MAX_CHANGED_ROWS, 3, (i) => [
+      cell(i.handler, MAX_NAME_LENGTH),
+      cell(i.name, MAX_NAME_LENGTH),
+      escapeHtml(i.change)
+    ])
+  ])
 }
 
 function siteLine(site: SiteInfo, server: string): string {
@@ -155,6 +179,7 @@ export async function writeSummary(
     if (!stage.data) continue
     if (
       stage.id === 'import' ||
+      stage.id === 'pre-report' ||
       stage.id === 'report' ||
       stage.id === 'export'
     ) {

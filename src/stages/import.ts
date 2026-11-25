@@ -2,8 +2,8 @@ import { analyse } from '../usync/analyse.js'
 import type { Analysis } from '../usync/analyse.js'
 import { runPerform } from '../usync/perform.js'
 import type { PerformResult } from '../usync/perform.js'
-import type { PerformAction } from '../types/usync.js'
-import { safeWarning } from '../utils/safe-log.js'
+import type { PerformAction, USyncActionView } from '../types/usync.js'
+import { safeInfo, safeWarning } from '../utils/safe-log.js'
 import type { Stage, StageContext } from './types.js'
 
 export interface PerformData {
@@ -13,7 +13,24 @@ export interface PerformData {
   zipBytes?: number
 }
 
-/** Runs a uSync action and analyses it, logging every failed item. */
+const MAX_LOGGED_ITEMS = 100
+
+/** Logs each changed item, capped so big runs stay readable. */
+function logItems(items: USyncActionView[]): void {
+  for (const item of items.slice(0, MAX_LOGGED_ITEMS)) {
+    const props = item.details?.length
+      ? ` (${item.details.length} properties)`
+      : ''
+    safeInfo(`  ${item.handler}: ${item.name} - ${item.change}${props}`)
+  }
+  if (items.length > MAX_LOGGED_ITEMS) {
+    safeInfo(
+      `  ...and ${items.length - MAX_LOGGED_ITEMS} more (see the job summary)`
+    )
+  }
+}
+
+/** Runs a uSync action and analyses it, logging every changed and failed item. */
 export async function runPerformStage(
   ctx: StageContext,
   action: PerformAction,
@@ -29,6 +46,7 @@ export async function runPerformStage(
     timeoutMs: inputs.timeoutMinutes * 60_000
   })
   const analysis = analyse(result.actions, result.status)
+  if (action !== 'Export') logItems(analysis.changes)
   for (const item of analysis.errors) {
     safeWarning(
       `${item.handler}: ${item.name} (${item.change})${item.message ? ` - ${item.message}` : ''}`

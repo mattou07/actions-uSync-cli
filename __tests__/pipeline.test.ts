@@ -155,7 +155,7 @@ describe('runPipeline', () => {
     const t = makeContext({ wait: false })
     t.usync.getSettings.mockRejectedValue(new Error('no settings'))
     const results = await runPipeline(t.ctx)
-    expect(results).toHaveLength(7)
+    expect(results).toHaveLength(8)
     expect(results[0]).toMatchObject({ id: 'connect', status: 'failed' })
     expect(results[1]).toMatchObject({
       status: 'skipped',

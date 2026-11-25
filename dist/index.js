@@ -224363,6 +224363,8 @@ class ProgressLogger {
         for (const handler of status ?? []) {
             if (handler.status !== 'Complete' && handler.status !== 'Error')
                 continue;
+            if (handler.status === 'Complete' && handler.changes === 0)
+                continue;
             if (this.seen.get(handler.name) === handler.status)
                 continue;
             this.seen.set(handler.name, handler.status);
@@ -224506,7 +224508,20 @@ async function pollBackground(api, run, progress, started, operationId) {
     }
 }
 
-/** Runs a uSync action and analyses it, logging every failed item. */
+const MAX_LOGGED_ITEMS = 100;
+/** Logs each changed item, capped so big runs stay readable. */
+function logItems(items) {
+    for (const item of items.slice(0, MAX_LOGGED_ITEMS)) {
+        const props = item.details?.length
+            ? ` (${item.details.length} properties)`
+            : '';
+        safeInfo(`  ${item.handler}: ${item.name} - ${item.change}${props}`);
+    }
+    if (items.length > MAX_LOGGED_ITEMS) {
+        safeInfo(`  ...and ${items.length - MAX_LOGGED_ITEMS} more (see the job summary)`);
+    }
+}
+/** Runs a uSync action and analyses it, logging every changed and failed item. */
 async function runPerformStage(ctx, action, clean) {
     const { inputs, site } = ctx;
     const result = await runPerform(ctx.usync, {
@@ -224518,6 +224533,8 @@ async function runPerformStage(ctx, action, clean) {
         timeoutMs: inputs.timeoutMinutes * 60_000
     });
     const analysis = analyse(result.actions, result.status);
+    if (action !== 'Export')
+        logItems(analysis.changes);
     for (const item of analysis.errors) {
         safeWarning(`${item.handler}: ${item.name} (${item.change})${item.message ? ` - ${item.message}` : ''}`);
     }
@@ -224661,22 +224678,19 @@ const rebuildIndexesStage = {
     }
 };
 
-const reportStage = {
-    id: 'report',
-    title: 'Report',
-    enabled: (inputs) => inputs.report,
+/**
+ * Reports what an import is about to change. Pending changes are expected here
+ * and never fail the stage; the report after the import checks they applied.
+ */
+const preReportStage = {
+    id: 'pre-report',
+    title: 'Report before import',
+    enabled: (inputs) => inputs.import && inputs.report,
     async run(ctx) {
         const data = await runPerformStage(ctx, 'Report', false);
         const { result, analysis } = data;
         const pending = analysis.changes.length;
-        const importStatus = ctx.results.import?.status;
-        const afterImport = importStatus !== undefined && importStatus !== 'skipped';
-        let summary = 'No pending changes';
-        if (pending > 0) {
-            summary = afterImport
-                ? `${pending} items still differ after import`
-                : `${pending} pending changes`;
-        }
+        let summary = pending > 0 ? `${pending} changes to import` : 'Nothing to import';
         if (analysis.errors.length > 0) {
             summary += `, ${analysis.errors.length} errors`;
         }
@@ -224685,21 +224699,93 @@ const reportStage = {
         }
         summary += incompleteNote(result);
         let status = 'success';
-        if (!result.succeeded || (ctx.inputs.failOnChanges && pending > 0)) {
+        if (!result.succeeded) {
             status = 'failed';
         }
-        else if (pending > 0 ||
-            analysis.errors.length > 0 ||
-            analysis.warnings.length > 0) {
+        else if (analysis.errors.length > 0 || analysis.warnings.length > 0) {
             status = 'warning';
         }
         return { status, summary, data };
     }
 };
 
+const EMPTY_KEY = /^[0-]*$/;
+/** handler|key, falling back to the name when uSync gives no (or an all-zero) key. */
+const itemId = (item) => `${item.handler}|${item.key && !EMPTY_KEY.test(item.key) ? item.key : item.name}`;
+const reportStage = {
+    id: 'report',
+    title: 'Report',
+    getTitle: (inputs) => (inputs.import ? 'Report after import' : 'Report'),
+    enabled: (inputs) => inputs.report,
+    async run(ctx) {
+        const data = await runPerformStage(ctx, 'Report', false);
+        const { result, analysis } = data;
+        const pending = analysis.changes.length;
+        const importStatus = ctx.results.import?.status;
+        const afterImport = importStatus !== undefined && importStatus !== 'skipped';
+        const extras = [];
+        if (analysis.errors.length > 0) {
+            extras.push(`${analysis.errors.length} errors`);
+        }
+        if (analysis.warnings.length > 0) {
+            extras.push(`${analysis.warnings.length} warnings`);
+        }
+        const withExtras = (text) => [text, ...extras].join(', ') + incompleteNote(result);
+        if (!afterImport) {
+            let status = 'success';
+            if (!result.succeeded || (ctx.inputs.failOnChanges && pending > 0)) {
+                status = 'failed';
+            }
+            else if (pending > 0 || extras.length > 0) {
+                status = 'warning';
+            }
+            return {
+                status,
+                summary: withExtras(pending > 0 ? `${pending} pending changes` : 'No pending changes'),
+                data
+            };
+        }
+        const before = ctx.results['pre-report']?.data;
+        let unapplied = analysis.changes;
+        let appeared = [];
+        if (before) {
+            const beforeIds = new Set(before.analysis.changes.map(itemId));
+            unapplied = analysis.changes.filter((i) => beforeIds.has(itemId(i)));
+            appeared = analysis.changes.filter((i) => !beforeIds.has(itemId(i)));
+        }
+        data.unapplied = unapplied;
+        data.appeared = appeared;
+        for (const item of unapplied) {
+            safeWarning(`${item.handler}: ${item.name} (${item.change})`);
+        }
+        const parts = [];
+        if (unapplied.length > 0) {
+            parts.push(`${unapplied.length} changes were not applied by the import`);
+        }
+        if (appeared.length > 0) {
+            parts.push(`${appeared.length} new changes appeared after the import`);
+        }
+        let status = 'success';
+        if (!result.succeeded ||
+            unapplied.length > 0 ||
+            (ctx.inputs.failOnChanges && pending > 0)) {
+            status = 'failed';
+        }
+        else if (appeared.length > 0 || extras.length > 0) {
+            status = 'warning';
+        }
+        return {
+            status,
+            summary: withExtras(parts.length > 0 ? parts.join(', ') : 'No pending changes'),
+            data
+        };
+    }
+};
+
 /** The fixed pipeline order. */
 const STAGES = [
     connectStage,
+    preReportStage,
     importStage,
     reportStage,
     rebuildCacheStage,
@@ -224758,10 +224844,11 @@ function count(value) {
 function setOutputs(results, resultsFile) {
     const connect = dataOf(results, 'connect');
     const imported = dataOf(results, 'import');
+    const preReport = dataOf(results, 'pre-report');
     const report = dataOf(results, 'report');
     const exported = dataOf(results, 'export');
     const connections = dataOf(results, 'check-connections');
-    const analyses = [imported, report, exported].filter((d) => d !== undefined);
+    const analyses = [preReport, imported, report, exported].filter((d) => d !== undefined);
     const warnings = analyses.length === 0
         ? undefined
         : analyses.reduce((sum, d) => sum + d.analysis.warnings.length, 0);
@@ -224769,7 +224856,9 @@ function setOutputs(results, resultsFile) {
     coreExports.setOutput('stages', JSON.stringify(results.map(({ id, status, summary }) => ({ id, status, summary }))));
     coreExports.setOutput('imported-changes', count(imported?.analysis.changes.length));
     coreExports.setOutput('import-errors', count(imported?.analysis.errors.length));
+    coreExports.setOutput('pre-import-changes', count(preReport?.analysis.changes.length));
     coreExports.setOutput('pending-changes', count(report?.analysis.changes.length));
+    coreExports.setOutput('unapplied-changes', count(report?.unapplied?.length));
     coreExports.setOutput('warnings', count(warnings));
     coreExports.setOutput('umbraco-version', connect?.umbracoVersion ?? '');
     coreExports.setOutput('usync-version', connect?.usyncVersion ?? '');
@@ -224864,7 +224953,7 @@ function addPerformSection(summary, stage, data) {
         ]);
     }
     if (analysis.changes.length > 0) {
-        const withDiffs = stage.id === 'report';
+        const withDiffs = stage.id === 'report' || stage.id === 'pre-report';
         summary.addHeading(withDiffs ? 'Pending changes' : 'Changed items', 3);
         summary.addTable([
             headerRow('Handler', 'Item', 'Change', ...(withDiffs ? ['Details'] : [])),
@@ -224876,6 +224965,24 @@ function addPerformSection(summary, stage, data) {
             ])
         ]);
     }
+    if (stage.id === 'report') {
+        const { unapplied, appeared } = data;
+        addItemTable(summary, 'Not applied by the import', unapplied);
+        addItemTable(summary, 'Appeared after the import', appeared);
+    }
+}
+function addItemTable(summary, heading, items) {
+    if (!items || items.length === 0)
+        return;
+    summary.addHeading(heading, 3);
+    summary.addTable([
+        headerRow('Handler', 'Item', 'Change'),
+        ...capped(items, MAX_CHANGED_ROWS, 3, (i) => [
+            cell(i.handler, MAX_NAME_LENGTH),
+            cell(i.name, MAX_NAME_LENGTH),
+            escapeHtml(i.change)
+        ])
+    ]);
 }
 function siteLine(site, server) {
     let host = server;
@@ -224907,6 +225014,7 @@ async function writeSummary(results, site, server) {
         if (!stage.data)
             continue;
         if (stage.id === 'import' ||
+            stage.id === 'pre-report' ||
             stage.id === 'report' ||
             stage.id === 'export') {
             addPerformSection(summary, stage, stage.data);

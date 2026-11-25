@@ -4,6 +4,7 @@ import * as core from '@actions/core'
 import type { CheckConnectionsData } from '../stages/check-connections.js'
 import type { ConnectData } from '../stages/connect.js'
 import type { PerformData } from '../stages/import.js'
+import type { ReportData } from '../stages/report.js'
 import type { StageId, StageResult } from '../stages/types.js'
 
 const RESULTS_FILE_NAME = 'usync-results.json'
@@ -20,11 +21,12 @@ function count(value: number | undefined): string {
 export function setOutputs(results: StageResult[], resultsFile: string): void {
   const connect = dataOf<ConnectData>(results, 'connect')
   const imported = dataOf<PerformData>(results, 'import')
-  const report = dataOf<PerformData>(results, 'report')
+  const preReport = dataOf<PerformData>(results, 'pre-report')
+  const report = dataOf<ReportData>(results, 'report')
   const exported = dataOf<PerformData>(results, 'export')
   const connections = dataOf<CheckConnectionsData>(results, 'check-connections')
 
-  const analyses = [imported, report, exported].filter(
+  const analyses = [preReport, imported, report, exported].filter(
     (d): d is PerformData => d !== undefined
   )
   const warnings =
@@ -41,7 +43,12 @@ export function setOutputs(results: StageResult[], resultsFile: string): void {
   )
   core.setOutput('imported-changes', count(imported?.analysis.changes.length))
   core.setOutput('import-errors', count(imported?.analysis.errors.length))
+  core.setOutput(
+    'pre-import-changes',
+    count(preReport?.analysis.changes.length)
+  )
   core.setOutput('pending-changes', count(report?.analysis.changes.length))
+  core.setOutput('unapplied-changes', count(report?.unapplied?.length))
   core.setOutput('warnings', count(warnings))
   core.setOutput('umbraco-version', connect?.umbracoVersion ?? '')
   core.setOutput('usync-version', connect?.usyncVersion ?? '')

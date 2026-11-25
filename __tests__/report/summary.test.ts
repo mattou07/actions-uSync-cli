@@ -157,6 +157,68 @@ describe('writeSummary', () => {
     expect(changed.find((r) => r[1].data === 'New block')?.[3].data).toBe('')
   })
 
+  it('shows property diffs in the report before import too', async () => {
+    const data = perform(
+      REPORT_RESPONSE.actions ?? [],
+      REPORT_RESPONSE.status ?? []
+    )
+    await writeSummary(
+      [stage('pre-report', 'success', data, 'Report before import')],
+      site,
+      'https://example.com'
+    )
+    expect(tables()[2][0].map((c) => c.data)).toEqual([
+      'Handler',
+      'Item',
+      'Change',
+      'Details'
+    ])
+  })
+
+  it('lists items not applied and items that appeared after the import', async () => {
+    const actions = REPORT_RESPONSE.actions ?? []
+    const evil = { ...actions[0], name: '<b>x</b>' }
+    const data = {
+      ...perform(actions),
+      unapplied: [evil],
+      appeared: actions.slice(1, 3)
+    }
+    await writeSummary(
+      [stage('report', 'failed', data, 'Report after import')],
+      site,
+      'https://example.com'
+    )
+    const headings = calls
+      .filter((c) => c.method === 'addHeading')
+      .map((c) => c.args[0])
+    expect(headings).toContain('Not applied by the import')
+    expect(headings).toContain('Appeared after the import')
+    const all = tables()
+    const unapplied = all[all.length - 2]
+    expect(unapplied[0].map((c) => c.data)).toEqual([
+      'Handler',
+      'Item',
+      'Change'
+    ])
+    expect(unapplied[1].map((c) => c.data)).toEqual([
+      'Content Types',
+      '&lt;b&gt;x&lt;/b&gt;',
+      'Create'
+    ])
+    expect(all[all.length - 1]).toHaveLength(3)
+  })
+
+  it('omits the unapplied and appeared sections when they are empty', async () => {
+    const data = { ...perform([]), unapplied: [], appeared: [] }
+    await writeSummary(
+      [stage('report', 'success', data, 'Report after import')],
+      site,
+      'https://example.com'
+    )
+    expect(flat()).not.toContain('Not applied')
+    expect(flat()).not.toContain('Appeared after')
+  })
+
   it('escapes every server-provided string', async () => {
     const evil = '<img src=x onerror="alert(1)">'
     const item: USyncActionView = {

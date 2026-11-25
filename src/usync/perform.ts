@@ -79,6 +79,7 @@ class ProgressLogger {
   update(status: SyncHandlerSummary[] | null | undefined): void {
     for (const handler of status ?? []) {
       if (handler.status !== 'Complete' && handler.status !== 'Error') continue
+      if (handler.status === 'Complete' && handler.changes === 0) continue
       if (this.seen.get(handler.name) === handler.status) continue
       this.seen.set(handler.name, handler.status)
       const outcome =

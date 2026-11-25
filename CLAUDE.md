@@ -1,9 +1,9 @@
 # actions-uSync-cli
 
 GitHub Action (TypeScript, ESM, Node 24) that runs uSync on a deployed Umbraco
-site through the Management API: wait → import → report → (rebuild cache,
-rebuild indexes, export) → connection check → job summary. It only ever talks to
-the `server` it is given. No dotnet, no shell calls.
+site through the Management API: wait → pre-report → import → report → (rebuild
+cache, rebuild indexes, export) → connection check → job summary. It only ever
+talks to the `server` it is given. No dotnet, no shell calls.
 
 ## Commands
 
@@ -28,9 +28,9 @@ the `server` it is given. No dotnet, no shell calls.
   https (http only for localhost).
 - `src/pipeline.ts`: ordered stage list; skip/abort/continue policy; collects
   `StageResult`.
-- `src/stages/`: one file per stage (wait, import, report, rebuild-cache,
-  rebuild-indexes, export, check-connections). Each has an `enabled(inputs)`
-  predicate and `run(ctx)`.
+- `src/stages/`: one file per stage (wait, pre-report, import, report,
+  rebuild-cache, rebuild-indexes, export, check-connections). Each has an
+  `enabled(inputs)` predicate and `run(ctx)`.
 - `src/api/http.ts`: `HttpClient` (fetch, per-attempt timeout, retries, 401
   refresh), `ApiError` with capped, redacted body.
 - `src/api/token-provider.ts`: client credentials token, cached, refreshed

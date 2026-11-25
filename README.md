@@ -13,12 +13,13 @@ It talks to the deployed site over the Umbraco Management API only. There is no
 One pipeline, always in this order. Flags turn stages on or off.
 
 1. Wait for the site to be ready.
-2. Import.
-3. Report (confirms nothing is left pending).
-4. Optionally rebuild the published cache and indexes.
-5. Optionally export, and download the export as an artifact.
-6. Check the Publisher connections.
-7. Write one job summary covering every stage.
+2. Report before the import (what is about to change).
+3. Import.
+4. Report after the import. Anything still pending fails the run.
+5. Optionally rebuild the published cache and indexes.
+6. Optionally export, and download the export as an artifact.
+7. Check the Publisher connections.
+8. Write one job summary covering every stage.
 
 ## Quick start
 
@@ -34,15 +35,16 @@ That waits for the site, imports, reports, and checks connections.
 
 ## Stages
 
-| #   | Stage            | Controlled by                                             | Default                        | What it does                                                                                                                                                        |
-| --- | ---------------- | --------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Wait             | `wait`, `wait-timeout-minutes`, `wait-for-startup-import` | on, 10 minutes, on             | Polls until the site runs, checks the credentials and permissions, waits for a startup or first-boot import, and waits for other uSync operations to finish.        |
-| 2   | Import           | `import`, `force`, `set`, `group`                         | on, false, site default, `all` | Runs the import. Failed items mark the run failed, but the pipeline carries on so the report still runs.                                                            |
-| 3   | Report           | `report`, `fail-on-changes`                               | on, false                      | After an import, confirms nothing is pending. With `import: false` it is a dry run listing what would change. `fail-on-changes: true` fails if anything is pending. |
-| 4   | Rebuild cache    | `rebuild-cache`                                           | off                            | Rebuilds the published cache and waits for it to finish.                                                                                                            |
-| 5   | Rebuild indexes  | `rebuild-indexes`                                         | empty (off)                    | Rebuilds each named index. A missing index is a warning.                                                                                                            |
-| 6   | Export           | `export`, `export-clean`, `download-export`               | off, false, false              | Runs an export. With `download-export` it downloads the zip and uploads it as an artifact.                                                                          |
-| 7   | Connection check | `check-connections`, `fail-on-connection-error`           | on, false                      | Asks the site to check its Publisher servers. Anything other than `Success` is a warning, or a failure with `fail-on-connection-error: true`.                       |
+| #   | Stage                 | Controlled by                                             | Default                        | What it does                                                                                                                                                                                                                                                                                                                                               |
+| --- | --------------------- | --------------------------------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Wait                  | `wait`, `wait-timeout-minutes`, `wait-for-startup-import` | on, 10 minutes, on             | Polls until the site runs, checks the credentials and permissions, waits for a startup or first-boot import, and waits for other uSync operations to finish.                                                                                                                                                                                               |
+| 2   | Report before import  | `report`                                                  | on                             | When import and report are both on, runs a uSync report first so you can see which items the import will change. Pending changes are expected here; errors or warnings make it a warning.                                                                                                                                                                  |
+| 3   | Import                | `import`, `force`, `set`, `group`                         | on, false, site default, `all` | Runs the import. Failed items mark the run failed, but the pipeline carries on so the report still runs.                                                                                                                                                                                                                                                   |
+| 4   | Report (after import) | `report`, `fail-on-changes`                               | on, false                      | After an import, compares with the report before it: any item still pending after the import was not applied and fails the run. New items that were not pending before are a warning. With `import: false` it is a single dry run listing what would change. `fail-on-changes: true` fails if anything is pending. `report: false` turns off both reports. |
+| 5   | Rebuild cache         | `rebuild-cache`                                           | off                            | Rebuilds the published cache and waits for it to finish.                                                                                                                                                                                                                                                                                                   |
+| 6   | Rebuild indexes       | `rebuild-indexes`                                         | empty (off)                    | Rebuilds each named index. A missing index is a warning.                                                                                                                                                                                                                                                                                                   |
+| 7   | Export                | `export`, `export-clean`, `download-export`               | off, false, false              | Runs an export. With `download-export` it downloads the zip and uploads it as an artifact.                                                                                                                                                                                                                                                                 |
+| 8   | Connection check      | `check-connections`, `fail-on-connection-error`           | on, false                      | Asks the site to check its Publisher servers. Anything other than `Success` is a warning, or a failure with `fail-on-connection-error: true`.                                                                                                                                                                                                              |
 
 Failure policy:
 
@@ -59,8 +61,8 @@ Modes are flag combinations, not separate commands.
 
 | Mode                    | Flags                                                              |
 | ----------------------- | ------------------------------------------------------------------ |
-| Deploy (default)        | none                                                               |
-| Report only / dry run   | `import: false`                                                    |
+| Deploy (default)        | none (report before, import, report after)                         |
+| Report only / dry run   | `import: false` (a single report, nothing is imported)             |
 | Drift gate              | `import: false`, `fail-on-changes: true`                           |
 | Wait only               | `import: false`, `report: false`, `check-connections: false`       |
 | Connection health check | `import: false`, `report: false`, `fail-on-connection-error: true` |
@@ -94,20 +96,22 @@ Modes are flag combinations, not separate commands.
 
 ## Outputs
 
-| Output              | Description                                                                                                     |
-| ------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `success`           | `true` if every stage that ran succeeded.                                                                       |
-| `stages`            | JSON array of `{id, status, summary}` per stage; status is one of: `success`, `warning`, `failed` or `skipped`. |
-| `imported-changes`  | Number of items changed by the import.                                                                          |
-| `import-errors`     | Number of items that failed to import.                                                                          |
-| `pending-changes`   | Number of changes still pending according to the report.                                                        |
-| `warnings`          | Number of warnings raised by uSync items.                                                                       |
-| `umbraco-version`   | Umbraco version of the site.                                                                                    |
-| `usync-version`     | uSync version of the site, if detected.                                                                         |
-| `export-artifact`   | Name of the artifact holding the downloaded export, if any.                                                     |
-| `connections`       | JSON array `[{alias, name, url, status}]` from the connection check.                                            |
-| `connection-errors` | Number of connected servers that did not report `Success`.                                                      |
-| `results-file`      | Path to a JSON file in `RUNNER_TEMP` with the full results of every stage.                                      |
+| Output               | Description                                                                                                     |
+| -------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `success`            | `true` if every stage that ran succeeded.                                                                       |
+| `stages`             | JSON array of `{id, status, summary}` per stage; status is one of: `success`, `warning`, `failed` or `skipped`. |
+| `imported-changes`   | Number of items changed by the import.                                                                          |
+| `import-errors`      | Number of items that failed to import.                                                                          |
+| `pre-import-changes` | Number of changes the report found pending before the import ran.                                               |
+| `unapplied-changes`  | Number of changes still pending after the import that the import should have applied.                           |
+| `pending-changes`    | Number of changes still pending according to the report.                                                        |
+| `warnings`           | Number of warnings raised by uSync items.                                                                       |
+| `umbraco-version`    | Umbraco version of the site.                                                                                    |
+| `usync-version`      | uSync version of the site, if detected.                                                                         |
+| `export-artifact`    | Name of the artifact holding the downloaded export, if any.                                                     |
+| `connections`        | JSON array `[{alias, name, url, status}]` from the connection check.                                            |
+| `connection-errors`  | Number of connected servers that did not report `Success`.                                                      |
+| `results-file`       | Path to a JSON file in `RUNNER_TEMP` with the full results of every stage.                                      |
 
 ## Recipes
 

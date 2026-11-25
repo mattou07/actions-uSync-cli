@@ -10,9 +10,12 @@ import {
   EXPORT_RESPONSE,
   IMPORT_REQUEST_ID,
   IMPORT_STEP_RESPONSES,
+  REPORT_ACTIONS,
   REPORT_RESPONSE
 } from '../fixtures/usync-responses.js'
 import { makeContext } from '../fixtures/stage-context.js'
+import { analyse } from '../../src/usync/analyse.js'
+import type { ReportData } from '../../src/stages/report.js'
 import { ApiError } from '../../src/api/http.js'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -30,6 +33,7 @@ jest.unstable_mockModule('../../src/utils/sleep.js', () => ({ sleep }))
 const { importStage, incompleteNote } =
   await import('../../src/stages/import.js')
 const { reportStage } = await import('../../src/stages/report.js')
+const { preReportStage } = await import('../../src/stages/pre-report.js')
 const { exportStage } = await import('../../src/stages/export.js')
 
 beforeEach(() => {
@@ -160,22 +164,149 @@ describe('reportStage', () => {
     })
   })
 
-  it('warns about pending changes after an import and never forces', async () => {
-    const t = makeContext({ force: true })
-    t.ctx.results.import = {
-      id: 'import',
-      title: 'Import',
-      status: 'success',
-      summary: ''
-    }
-    t.usync.perform.mockResolvedValueOnce(REPORT_RESPONSE)
-    const outcome = await reportStage.run(t.ctx)
-    expect(outcome.status).toBe('warning')
-    expect(outcome.summary).toBe('4 items still differ after import')
-    expect(t.usync.perform.mock.calls[0][0].options.force).toBe(false)
+  it('titles itself by whether an import runs', () => {
+    const { ctx } = makeContext()
+    expect(reportStage.getTitle?.({ ...ctx.inputs, import: true })).toBe(
+      'Report after import'
+    )
+    expect(reportStage.getTitle?.({ ...ctx.inputs, import: false })).toBe(
+      'Report'
+    )
   })
 
-  it('describes a dry run when the import was skipped or absent', async () => {
+  describe('after an import', () => {
+    const imported = (t: ReturnType<typeof makeContext>) => {
+      t.ctx.results.import = {
+        id: 'import',
+        title: 'Import',
+        status: 'success',
+        summary: ''
+      }
+    }
+    const preReport = (
+      t: ReturnType<typeof makeContext>,
+      actions: typeof REPORT_ACTIONS
+    ) => {
+      t.ctx.results['pre-report'] = {
+        id: 'pre-report',
+        title: 'Report before import',
+        status: 'success',
+        summary: '',
+        data: { analysis: analyse(actions, []) }
+      }
+    }
+
+    it('succeeds with no pending changes and never forces', async () => {
+      const t = makeContext({ force: true })
+      imported(t)
+      preReport(t, REPORT_ACTIONS)
+      t.usync.perform.mockResolvedValueOnce(completeWith([DATA_TYPE_ITEMS[1]]))
+      const outcome = await reportStage.run(t.ctx)
+      expect(outcome).toMatchObject({
+        status: 'success',
+        summary: 'No pending changes'
+      })
+      expect(t.usync.perform.mock.calls[0][0].options.force).toBe(false)
+      expect((outcome.data as ReportData).unapplied).toEqual([])
+      expect((outcome.data as ReportData).appeared).toEqual([])
+    })
+
+    it('fails when items pending before are still pending, and logs them', async () => {
+      const t = makeContext()
+      imported(t)
+      preReport(t, REPORT_ACTIONS)
+      t.usync.perform.mockResolvedValueOnce(REPORT_RESPONSE)
+      const outcome = await reportStage.run(t.ctx)
+      expect(outcome.status).toBe('failed')
+      expect(outcome.summary).toBe('4 changes were not applied by the import')
+      expect((outcome.data as ReportData).unapplied).toHaveLength(4)
+      expect((outcome.data as ReportData).appeared).toEqual([])
+      expect(core.warning).toHaveBeenCalledWith(
+        'Content Types: New block (Create)'
+      )
+    })
+
+    it('warns when only new changes appeared', async () => {
+      const t = makeContext()
+      imported(t)
+      preReport(t, [REPORT_ACTIONS[0]])
+      t.usync.perform.mockResolvedValueOnce(
+        completeWith([{ ...REPORT_ACTIONS[1] }])
+      )
+      const outcome = await reportStage.run(t.ctx)
+      expect(outcome.status).toBe('warning')
+      expect(outcome.summary).toBe('1 new changes appeared after the import')
+      expect((outcome.data as ReportData).appeared).toHaveLength(1)
+    })
+
+    it('combines unapplied and appeared and matches by name without a key', async () => {
+      const t = makeContext()
+      imported(t)
+      preReport(t, [{ ...REPORT_ACTIONS[0], key: '' }])
+      t.usync.perform.mockResolvedValueOnce(
+        completeWith([{ ...REPORT_ACTIONS[0], key: '' }, REPORT_ACTIONS[1]])
+      )
+      const outcome = await reportStage.run(t.ctx)
+      expect(outcome.status).toBe('failed')
+      expect(outcome.summary).toBe(
+        '1 changes were not applied by the import, 1 new changes appeared after the import'
+      )
+    })
+
+    it('matches by name when uSync gives an all-zero key', async () => {
+      const zero = '00000000-0000-0000-0000-000000000000'
+      const t = makeContext()
+      imported(t)
+      preReport(t, [{ ...REPORT_ACTIONS[0], key: zero, name: 'Before' }])
+      t.usync.perform.mockResolvedValueOnce(
+        completeWith([{ ...REPORT_ACTIONS[0], key: zero, name: 'After' }])
+      )
+      const outcome = await reportStage.run(t.ctx)
+      expect(outcome.status).toBe('warning')
+      expect((outcome.data as ReportData).unapplied).toEqual([])
+      expect((outcome.data as ReportData).appeared).toHaveLength(1)
+    })
+
+    it('treats every pending change as unapplied without pre-report data', async () => {
+      const t = makeContext()
+      imported(t)
+      t.usync.perform.mockResolvedValueOnce(REPORT_RESPONSE)
+      const outcome = await reportStage.run(t.ctx)
+      expect(outcome.status).toBe('failed')
+      expect((outcome.data as ReportData).unapplied).toHaveLength(4)
+    })
+
+    it('fails on appeared changes with fail-on-changes', async () => {
+      const t = makeContext({ failOnChanges: true })
+      imported(t)
+      preReport(t, [])
+      t.usync.perform.mockResolvedValueOnce(REPORT_RESPONSE)
+      const outcome = await reportStage.run(t.ctx)
+      expect(outcome.status).toBe('failed')
+      expect((outcome.data as ReportData).appeared).toHaveLength(4)
+    })
+
+    it('warns on report errors and warnings alone, and fails when incomplete', async () => {
+      const t = makeContext()
+      imported(t)
+      preReport(t, [])
+      t.usync.perform.mockResolvedValueOnce(
+        completeWith([
+          { ...DATA_TYPE_ITEMS[1], success: false, change: 'Fail' },
+          { ...DATA_TYPE_ITEMS[1], details: CONTENT_TYPE_ITEMS[0].details }
+        ])
+      )
+      const outcome = await reportStage.run(t.ctx)
+      expect(outcome.status).toBe('warning')
+      expect(outcome.summary).toBe('No pending changes, 1 errors, 1 warnings')
+
+      t.usync.perform.mockResolvedValueOnce(BACKGROUND_START_RESPONSE)
+      t.usync.getOperationStatus.mockResolvedValueOnce(BACKGROUND_STATUS_STALE)
+      expect((await reportStage.run(t.ctx)).status).toBe('failed')
+    })
+  })
+
+  it('keeps the dry-run behaviour when the import was skipped or absent', async () => {
     const t = makeContext()
     t.ctx.results.import = {
       id: 'import',
@@ -233,6 +364,121 @@ describe('reportStage', () => {
     t.usync.perform.mockResolvedValueOnce(BACKGROUND_START_RESPONSE)
     t.usync.getOperationStatus.mockResolvedValueOnce(BACKGROUND_STATUS_STALE)
     expect((await reportStage.run(t.ctx)).status).toBe('failed')
+  })
+})
+
+describe('preReportStage', () => {
+  it('is enabled only when both import and report are on', () => {
+    const { ctx } = makeContext()
+    const on = (i: boolean, r: boolean) =>
+      preReportStage.enabled({ ...ctx.inputs, import: i, report: r })
+    expect(on(true, true)).toBe(true)
+    expect(on(true, false)).toBe(false)
+    expect(on(false, true)).toBe(false)
+    expect(on(false, false)).toBe(false)
+  })
+
+  it('counts changes to import without failing on them', async () => {
+    const t = makeContext({ failOnChanges: true, force: true })
+    t.usync.perform.mockResolvedValueOnce(REPORT_RESPONSE)
+    const outcome = await preReportStage.run(t.ctx)
+    expect(outcome.status).toBe('success')
+    expect(outcome.summary).toBe('4 changes to import')
+    expect(t.usync.perform.mock.calls[0][0].action).toBe('Report')
+    expect(t.usync.perform.mock.calls[0][0].options.force).toBe(false)
+  })
+
+  it('says when there is nothing to import', async () => {
+    const t = makeContext()
+    t.usync.perform.mockResolvedValueOnce(completeWith([DATA_TYPE_ITEMS[1]]))
+    expect(await preReportStage.run(t.ctx)).toMatchObject({
+      status: 'success',
+      summary: 'Nothing to import'
+    })
+  })
+
+  it('warns about errors and warnings', async () => {
+    const t = makeContext()
+    t.usync.perform.mockResolvedValueOnce(
+      completeWith([
+        ...CONTENT_TYPE_ITEMS,
+        { ...DATA_TYPE_ITEMS[1], success: false, change: 'Fail' }
+      ])
+    )
+    const outcome = await preReportStage.run(t.ctx)
+    expect(outcome.status).toBe('warning')
+    expect(outcome.summary).toBe('1 changes to import, 1 errors, 1 warnings')
+  })
+
+  it('warns on errors alone and on warnings alone', async () => {
+    const t = makeContext()
+    t.usync.perform.mockResolvedValueOnce(
+      completeWith([{ ...DATA_TYPE_ITEMS[1], success: false, change: 'Fail' }])
+    )
+    expect((await preReportStage.run(t.ctx)).status).toBe('warning')
+    t.usync.perform.mockResolvedValueOnce(
+      completeWith([
+        { ...DATA_TYPE_ITEMS[1], details: CONTENT_TYPE_ITEMS[0].details }
+      ])
+    )
+    expect((await preReportStage.run(t.ctx)).status).toBe('warning')
+  })
+
+  it('fails when a background report does not succeed', async () => {
+    const t = makeContext()
+    t.usync.perform.mockResolvedValueOnce(BACKGROUND_START_RESPONSE)
+    t.usync.getOperationStatus.mockResolvedValueOnce(BACKGROUND_STATUS_STALE)
+    const outcome = await preReportStage.run(t.ctx)
+    expect(outcome.status).toBe('failed')
+    expect(outcome.summary).toContain('operation Stale')
+  })
+})
+
+describe('item logging', () => {
+  const detail = {
+    success: true,
+    name: 'n',
+    path: 'p',
+    change: 'Update' as const
+  }
+  const item = (i: number, details = 0) => ({
+    ...DATA_TYPE_ITEMS[0],
+    key: 'k' + i,
+    name: 'Item ' + i,
+    details: Array.from({ length: details }, () => detail)
+  })
+
+  it('logs each changed item with its property count', async () => {
+    const t = makeContext()
+    t.usync.perform.mockResolvedValueOnce(
+      completeWith([item(1, 2), item(2, 0), DATA_TYPE_ITEMS[1]])
+    )
+    await importStage.run(t.ctx)
+    const lines = core.info.mock.calls.map((c) => c[0])
+    expect(lines).toContain('  Data Types: Item 1 - Update (2 properties)')
+    expect(lines).toContain('  Data Types: Item 2 - Update')
+    expect(lines.filter((l) => l.includes('Data Types:'))).toHaveLength(2)
+  })
+
+  it('caps the list at 100 lines', async () => {
+    const t = makeContext()
+    t.usync.perform.mockResolvedValueOnce(
+      completeWith(Array.from({ length: 105 }, (_, i) => item(i)))
+    )
+    await reportStage.run(t.ctx)
+    const lines = core.info.mock.calls.map((c) => c[0])
+    expect(
+      lines.filter((l) => l.startsWith('  Data Types: Item'))
+    ).toHaveLength(100)
+    expect(lines).toContain('  ...and 5 more (see the job summary)')
+  })
+
+  it('does not log items for an export', async () => {
+    const t = makeContext()
+    t.usync.perform.mockResolvedValueOnce(EXPORT_RESPONSE)
+    await exportStage.run(t.ctx)
+    const lines = core.info.mock.calls.map((c) => c[0])
+    expect(lines.filter((l) => l.includes(' - Export'))).toEqual([])
   })
 })
 

@@ -58,7 +58,14 @@ describe('setOutputs', () => {
             ...TEMPLATE_ITEMS
           ])
         ),
-        result('report', 'warning', performData(REPORT_ACTIONS)),
+        result('pre-report', 'success', performData(REPORT_ACTIONS)),
+        result(
+          'report',
+          'failed',
+          performData(REPORT_ACTIONS, {
+            unapplied: REPORT_ACTIONS.slice(0, 3)
+          } as Partial<PerformData>)
+        ),
         result(
           'export',
           'success',
@@ -94,7 +101,8 @@ describe('setOutputs', () => {
     expect(JSON.parse(o.stages as string)).toEqual([
       { id: 'connect', status: 'success', summary: 'connect summary' },
       { id: 'import', status: 'failed', summary: 'import summary' },
-      { id: 'report', status: 'warning', summary: 'report summary' },
+      { id: 'pre-report', status: 'success', summary: 'pre-report summary' },
+      { id: 'report', status: 'failed', summary: 'report summary' },
       { id: 'export', status: 'success', summary: 'export summary' },
       {
         id: 'check-connections',
@@ -105,6 +113,8 @@ describe('setOutputs', () => {
     expect(o['imported-changes']).toBe('2')
     expect(o['import-errors']).toBe('1')
     expect(o['pending-changes']).toBe('4')
+    expect(o['pre-import-changes']).toBe('4')
+    expect(o['unapplied-changes']).toBe('3')
     expect(o.warnings).toBe('1')
     expect(o['umbraco-version']).toBe('17.4.0')
     expect(o['usync-version']).toBe('17.5.0')
@@ -142,6 +152,8 @@ describe('setOutputs', () => {
       'imported-changes',
       'import-errors',
       'pending-changes',
+      'pre-import-changes',
+      'unapplied-changes',
       'warnings',
       'umbraco-version',
       'usync-version',

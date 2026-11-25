@@ -42,6 +42,7 @@ describe('STAGES', () => {
   it('lists the stages in pipeline order', () => {
     expect(STAGES.map((s) => s.id)).toEqual([
       'connect',
+      'pre-report',
       'import',
       'report',
       'rebuild-cache',

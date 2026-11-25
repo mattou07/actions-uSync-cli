@@ -137,6 +137,13 @@ outputs:
     description: 'Number of items changed by the import.'
   import-errors:
     description: 'Number of items that failed to import.'
+  pre-import-changes:
+    description:
+      'Number of changes the report found pending before the import ran.'
+  unapplied-changes:
+    description:
+      'Number of changes still pending after the import that the import should
+      have applied.'
   pending-changes:
     description: 'Number of changes still pending according to the report.'
   warnings:

@@ -129,6 +129,24 @@ describe('runPerform normal mode', () => {
     expect(info).not.toHaveBeenCalled()
   })
 
+  it('does not log handlers that completed with no changes', async () => {
+    api.perform.mockResolvedValueOnce({
+      requestId: 'r',
+      complete: true,
+      status: [
+        { name: 'Quiet', status: 'Complete', changes: 0, inError: false },
+        { name: 'Loud', status: 'Complete', changes: 2, inError: false },
+        { name: 'Broken', status: 'Error', changes: 0, inError: true }
+      ],
+      actions: []
+    })
+    await runPerform(api, options())
+    expect(logged()).toEqual([
+      '  Loud: complete (2 changes)',
+      '  Broken: finished with errors (0 changes)'
+    ])
+  })
+
   it('neutralises workflow commands in handler names', async () => {
     const status: SyncHandlerSummary[] = [
       { name: '::warning::x', status: 'Complete', changes: 1, inError: false }
