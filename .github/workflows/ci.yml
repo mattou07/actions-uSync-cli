@@ -12,74 +12,62 @@ permissions:
   contents: read
 
 jobs:
-  # test-typescript:
-  #   name: TypeScript Tests
-  #   runs-on: ubuntu-latest
-
-  #   steps:
-  #     - name: Checkout
-  #       id: checkout
-  #       uses: actions/checkout@v4
-
-  #     - name: Setup Node.js
-  #       id: setup-node
-  #       uses: actions/setup-node@v4
-  #       with:
-  #         node-version-file: .node-version
-  #         cache: npm
-
-  #     - name: Install Dependencies
-  #       id: npm-ci
-  #       run: npm ci
-
-  #     - name: Check Format
-  #       id: npm-format-check
-  #       run: npm run format:check
-
-  #     - name: Lint
-  #       id: npm-lint
-  #       run: npm run lint
-
-  #     - name: Test
-  #       id: npm-ci-test
-  #       run: npm run ci-test
-
-  test-action:
-    name: GitHub Actions Test
+  test-typescript:
+    name: TypeScript Tests
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         id: checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
-      - name: Test Setup Action
-        id: setup-action
-        uses: ./setup
-
-      - name: Test Invoke Action (default)
-        id: invoke-action-default
-        uses: ./invoke
+      - name: Setup Node.js
+        id: setup-node
+        uses: actions/setup-node@v4
         with:
-          server: ${{ secrets.TARGETURL}}
-          key: ${{ secrets.HMAC }}
+          node-version-file: .node-version
+          cache: npm
 
-      - name: Test Invoke Action (ping)
-        id: invoke-action-ping
-        uses: ./invoke
-        with:
-          command: 'ping'
-          server: ${{ secrets.TARGETURL}}
-          key: ${{ secrets.HMAC }}
+      - name: Install Dependencies
+        id: npm-ci
+        run: npm ci
 
-      - name: Test Invoke Action (Rebuild DB Cache)
-        id: invoke-action-rebuildDBCache
-        uses: ./invoke
+      - name: Check Format
+        id: npm-format-check
+        run: npm run format:check
+
+      - name: Lint
+        id: npm-lint
+        run: npm run lint
+
+      - name: Test
+        id: npm-ci-test
+        run: npm run ci-test
+
+  # Runs the action against a real test site. Only runs when the repository
+  # variable USYNC_TEST_SERVER is set (with secrets USYNC_TEST_CLIENT_ID and
+  # USYNC_TEST_CLIENT_SECRET for an API user on that site).
+  test-action:
+    name: GitHub Actions Test
+    runs-on: ubuntu-latest
+    if: ${{ vars.USYNC_TEST_SERVER != '' }}
+
+    steps:
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v6
+
+      - name: Report only against the test site
+        id: test-action
+        uses: ./
         with:
-          command: 'Rebuild-DBCache'
-          server: ${{ secrets.TARGETURL}}
-          key: ${{ secrets.HMAC }}
+          server: ${{ vars.USYNC_TEST_SERVER }}
+          client-id: ${{ secrets.USYNC_TEST_CLIENT_ID }}
+          client-secret: ${{ secrets.USYNC_TEST_CLIENT_SECRET }}
+          import: false
 
       - name: Print Output
         id: output
-        run: echo "${{ steps.test-action.outputs.version }}"
+        run: |
+          echo "Stages: ${{ steps.test-action.outputs.stages }}"
+          echo "Pending changes: ${{ steps.test-action.outputs.pending-changes }}"

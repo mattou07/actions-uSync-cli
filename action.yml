@@ -1,5 +1,7 @@
-name: 'uSync CLI'
-description: 'Run any uSync CLI command against an Umbraco instance'
+name: 'uSync Action'
+description:
+  'Run uSync on a deployed Umbraco site: wait, import, report, and check the
+  Publisher connections, using the Management API only.'
 author: 'mattou07'
 
 branding:
@@ -8,52 +10,153 @@ branding:
 
 inputs:
   server:
-    description: 'URL of the Umbraco server'
+    description:
+      'Base URL of the deployed Umbraco site, for example https://example.com.
+      Must be https (http is allowed for localhost only).'
     required: true
-
   client-id:
-    description: 'OAuth2 client ID for authentication'
-    required: true
-
-  secret:
-    description: 'OAuth2 client secret for authentication'
-    required: true
-
-  command:
     description:
-      'uSync CLI command to run (e.g., usync-import, usync-export, usync-ping,
-      cache-rebuild, models-rebuild)'
+      'Client ID of an Umbraco API user. Must start with umbraco-back-office-.'
+    required: true
+  client-secret:
+    description: 'Client secret of the Umbraco API user.'
     required: true
 
-  usync-version:
-    description: 'Version of uSync CLI to install (e.g., 16.0.0) or "latest"'
+  wait:
+    description:
+      'Wait for the site to be ready (run level Run), for the credentials and
+      permissions to work, and for other uSync operations to finish.'
     required: false
-    default: 'latest'
-
-  additional-args:
+    default: 'true'
+  wait-timeout-minutes:
+    description: 'How long to wait for the site to be ready, in minutes.'
+    required: false
+    default: '10'
+  wait-for-startup-import:
     description:
-      'Additional arguments to pass to the CLI command (e.g., --force)'
+      'Wait for a uSync startup or first-boot import (ImportOnFirstBoot,
+      ImportAtStartup) to finish. Needs uSync 17.6.3 or later, skipped
+      otherwise.'
+    required: false
+    default: 'true'
+
+  import:
+    description: 'Run a uSync import.'
+    required: false
+    default: 'true'
+  force:
+    description: 'Force the import, even for items that have not changed.'
+    required: false
+    default: 'false'
+  set:
+    description:
+      'uSync set to use. Empty uses the default set configured on the site.'
+    required: false
+    default: ''
+  group:
+    description: 'uSync handler group to process, for example all or settings.'
+    required: false
+    default: 'all'
+
+  report:
+    description:
+      'Run a uSync report. After an import it confirms nothing is left pending.
+      With import set to false it is a dry run.'
+    required: false
+    default: 'true'
+  fail-on-changes:
+    description: 'Fail the run if the report finds pending changes.'
+    required: false
+    default: 'false'
+
+  rebuild-cache:
+    description:
+      'Rebuild the published content cache and wait for it to finish.'
+    required: false
+    default: 'false'
+  rebuild-indexes:
+    description:
+      'Names of Examine indexes to rebuild, separated by commas or new lines,
+      for example ExternalIndex. Empty skips the stage.'
     required: false
     default: ''
 
-  index-name:
-    description:
-      'Comma-separated list of Umbraco index names to rebuild (e.g.
-      "ExternalIndex, InternalIndex"). Required for indexer-rebuild command.
-      Missing indexes are reported as warnings and do not fail the action.'
+  export:
+    description: 'Run a uSync export on the site.'
     required: false
-    default: ''
+    default: 'false'
+  export-clean:
+    description: 'Clean the export folder before exporting.'
+    required: false
+    default: 'false'
+  download-export:
+    description:
+      'Download the export folder as a zip and upload it as a workflow artifact.
+      Turns export on if it is off. Needs an admin API user.'
+    required: false
+    default: 'false'
+  export-artifact-name:
+    description:
+      'Name of the workflow artifact used for the downloaded export. Letters,
+      numbers, dot, underscore and hyphen only.'
+    required: false
+    default: 'usync-export'
+
+  check-connections:
+    description:
+      'Ask the site to check its own uSync Publisher servers. Needs
+      uSync.Complete on the site, skipped otherwise.'
+    required: false
+    default: 'true'
+  fail-on-connection-error:
+    description:
+      'Fail the run if any connected server does not report Success. Otherwise
+      it is a warning.'
+    required: false
+    default: 'false'
+
+  timeout-minutes:
+    description:
+      'Maximum time for one long operation (import, report, export, background
+      polling, cache rebuild), in minutes.'
+    required: false
+    default: '30'
+  request-timeout-seconds:
+    description: 'Timeout for a single HTTP request, in seconds.'
+    required: false
+    default: '60'
 
 outputs:
   success:
-    description: 'Whether the command succeeded'
-
-  exit-code:
-    description: 'Exit code from the CLI command'
-
-  output:
-    description: 'Standard output from the CLI command'
+    description: 'true if every stage that ran succeeded, otherwise false.'
+  stages:
+    description:
+      'JSON array of {id, status, summary} per stage; status is one of: success,
+      warning, failed or skipped.'
+  imported-changes:
+    description: 'Number of items changed by the import.'
+  import-errors:
+    description: 'Number of items that failed to import.'
+  pending-changes:
+    description: 'Number of changes still pending according to the report.'
+  warnings:
+    description: 'Number of warnings raised by uSync items.'
+  umbraco-version:
+    description: 'Umbraco version of the site.'
+  usync-version:
+    description: 'uSync version of the site, if it could be detected.'
+  export-artifact:
+    description:
+      'Name of the workflow artifact holding the downloaded export, if any.'
+  connections:
+    description:
+      'JSON array of Publisher server checks: [{alias, name, url, status}].'
+  connection-errors:
+    description: 'Number of connected servers that did not report Success.'
+  results-file:
+    description:
+      'Path to a JSON file in RUNNER_TEMP with the full results of every stage.'
 
 runs:
-  using: node20
+  using: node24
   main: dist/index.js

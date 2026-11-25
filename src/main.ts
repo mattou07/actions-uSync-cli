@@ -1,184 +1,76 @@
+import * as os from 'node:os'
 import * as core from '@actions/core'
-import * as exec from '@actions/exec'
-import * as os from 'os'
-import * as path from 'path'
-import { getAccessToken } from './lib/auth'
-import { rebuildIndexes } from './lib/indexer'
-import { ping } from './lib/ping'
+import { DefaultArtifactClient } from '@actions/artifact'
+import { HttpClient } from './api/http.js'
+import { PublisherApi } from './api/publisher-api.js'
+import { TokenProvider } from './api/token-provider.js'
+import { UmbracoApi } from './api/umbraco-api.js'
+import { USyncApi } from './api/usync-api.js'
+import { getInputs } from './inputs.js'
+import { runPipeline } from './pipeline.js'
+import { setOutputs, writeResultsFile } from './report/outputs.js'
+import { writeSummary } from './report/summary.js'
+import type { ArtifactUploader, StageContext } from './stages/types.js'
+import { errorMessage } from './stages/types.js'
 
-/**
- * The main function for the uSync CLI action.
- * Installs the CLI if not already present, then runs the requested command.
- * @returns {Promise<void>} Resolves when the action is complete.
- */
-export async function run(): Promise<void> {
-  try {
-    const server = core.getInput('server', { required: true })
-    const clientId = core.getInput('client-id', { required: true })
-    const secret = core.getInput('secret', { required: true })
-    const command = core.getInput('command', { required: true })
-    const usyncVersion = core.getInput('usync-version') || 'latest'
-    const additionalArgs = core.getInput('additional-args')
-
-    // Mask the secret so it never appears in logs
-    core.setSecret(secret)
-
-    // usync-ping is handled directly via HTTP — no dotnet CLI needed
-    if (command === 'usync-ping') {
-      core.info(`🚀 Running uSync command: ${command}`)
-      await ping(server, clientId, secret)
-      core.setOutput('success', true)
-      core.setOutput('exit-code', 0)
-      core.setOutput('output', '')
-      core.info(`✅ Command '${command}' completed successfully`)
-      return
-    }
-
-    // indexer-rebuild is handled directly via HTTP — no dotnet CLI needed
-    if (command === 'indexer-rebuild') {
-      const indexNamesRaw = core.getInput('index-name')
-      const indexNames = indexNamesRaw.split(/[\s,]+/).filter(n => n.length > 0)
-      if (indexNames.length === 0) {
-        core.setFailed(
-          'The "index-name" input is required for the indexer-rebuild command'
-        )
-        return
-      }
-      core.info(
-        `🚀 Rebuilding ${indexNames.length} index(es): ${indexNames.join(', ')}`
+function createArtifactUploader(): ArtifactUploader {
+  return {
+    async upload(name, filePath, rootDir) {
+      const response = await new DefaultArtifactClient().uploadArtifact(
+        name,
+        [filePath],
+        rootDir
       )
-      const token = await getAccessToken(server, clientId, secret)
-      const results = await rebuildIndexes(server, token, indexNames)
-      const failed = results.filter(r => r.status === 'failed')
-      const notFound = results.filter(r => r.status === 'not-found')
-      core.setOutput('index-results', JSON.stringify(results))
-      core.setOutput('exit-code', failed.length > 0 ? 1 : 0)
-      if (failed.length > 0) {
-        core.setOutput('success', false)
-        core.setFailed(
-          `Rebuild failed for: ${failed.map(r => r.name).join(', ')}`
-        )
-      } else {
-        core.setOutput('success', true)
-        if (notFound.length > 0) {
-          core.warning(
-            `Indexes not found: ${notFound.map(r => r.name).join(', ')}`
-          )
-        }
-        core.info(`✅ Rebuild requested for all indexes`)
-      }
-      return
+      return { id: response.id, size: response.size }
     }
-
-    // All other commands: ensure CLI is installed then exec
-    // Step 1: Ensure the uSync CLI is installed
-    await ensureUSyncCli(usyncVersion)
-
-    // Step 2: Run the requested command
-    core.info(`🚀 Running uSync command: ${command}`)
-
-    let output = ''
-    const listeners = {
-      stdout: (data: Buffer) => {
-        output += data.toString()
-      },
-      stderr: (data: Buffer) => {
-        output += data.toString()
-      }
-    }
-
-    // -s <server-url>, -k <secret>, -i <client-id>
-    const args = [command, '-s', server, '-k', secret, '-i', clientId]
-
-    if (additionalArgs) {
-      args.push(...additionalArgs.split(' ').filter(a => a.trim().length > 0))
-    }
-
-    const exitCode = await exec.exec('uSyncCli', args, {
-      listeners,
-      ignoreReturnCode: true
-    })
-
-    const success = exitCode === 0
-
-    core.setOutput('success', success)
-    core.setOutput('exit-code', exitCode)
-    core.setOutput('output', output)
-
-    if (success) {
-      core.info(`✅ Command '${command}' completed successfully`)
-    } else {
-      core.setFailed(
-        `uSync command '${command}' failed with exit code ${exitCode}`
-      )
-    }
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : 'Unknown error occurred'
-    core.setFailed(message)
-    core.setOutput('success', false)
-    core.setOutput('exit-code', -1)
-    core.setOutput('output', '')
   }
 }
 
-/**
- * Installs uSync.Cli as a global .NET tool if it is not already present.
- */
-async function ensureUSyncCli(version: string): Promise<void> {
-  // The dotnet global tools directory is not always on PATH (e.g. on GitHub
-  // Actions runners when the tool is installed mid-job). Add it now so both
-  // the version check and the subsequent command invocation can find the binary.
-  const dotnetToolsDir = path.join(os.homedir(), '.dotnet', 'tools')
-  core.addPath(dotnetToolsDir) // persists for subsequent workflow steps
-  process.env.PATH = `${dotnetToolsDir}${path.delimiter}${process.env.PATH ?? ''}` // current process
+/** Runs the uSync pipeline described by the action inputs. */
+export async function run(): Promise<void> {
+  try {
+    const inputs = getInputs()
+    const http = new HttpClient(inputs.server, {
+      requestTimeoutMs: inputs.requestTimeoutSeconds * 1000
+    })
+    http.setAuth(new TokenProvider(http, inputs.clientId, inputs.clientSecret))
 
-  // Check if already installed
-  const checkCode = await exec.exec('uSyncCli', ['--version'], {
-    ignoreReturnCode: true,
-    silent: true
-  })
-
-  if (checkCode === 0) {
-    core.info('✅ uSync CLI already installed')
-    return
-  }
-
-  core.info('📦 Installing uSync CLI...')
-
-  const args = ['tool', 'install', 'uSync.Cli', '-g']
-  if (version !== 'latest') {
-    args.push('--version', version)
-  }
-
-  let errorOutput = ''
-  const installCode = await exec.exec('dotnet', args, {
-    ignoreReturnCode: true,
-    listeners: {
-      stderr: (data: Buffer) => {
-        errorOutput += data.toString()
-      }
+    const tempDir = process.env.RUNNER_TEMP || os.tmpdir()
+    const ctx: StageContext = {
+      inputs,
+      umbraco: new UmbracoApi(http),
+      usync: new USyncApi(http),
+      publisher: new PublisherApi(http),
+      site: { set: inputs.set },
+      results: {},
+      artifacts: createArtifactUploader(),
+      tempDir
     }
-  })
 
-  if (installCode !== 0) {
-    // Tool may already be installed under a different version — try updating
-    if (errorOutput.includes('already installed')) {
-      core.info('⚠️ Tool already installed, updating...')
-      const updateArgs = ['tool', 'update', 'uSync.Cli', '-g']
-      if (version !== 'latest') {
-        updateArgs.push('--version', version)
-      }
-      const updateCode = await exec.exec('dotnet', updateArgs, {
-        ignoreReturnCode: true
-      })
-      if (updateCode !== 0) {
-        throw new Error('Failed to update uSync CLI')
-      }
-    } else {
-      throw new Error(`Failed to install uSync CLI: ${errorOutput}`)
+    const results = await runPipeline(ctx)
+
+    let resultsFile = ''
+    try {
+      resultsFile = await writeResultsFile(results, tempDir)
+    } catch (error) {
+      core.warning(`Could not write the results file: ${errorMessage(error)}`)
     }
-  }
+    try {
+      setOutputs(results, resultsFile)
+    } catch (error) {
+      core.warning(`Could not set the outputs: ${errorMessage(error)}`)
+    }
+    try {
+      await writeSummary(results, ctx.site, inputs.server)
+    } catch (error) {
+      core.warning(`Could not write the job summary: ${errorMessage(error)}`)
+    }
 
-  core.info('✅ uSync CLI installed')
+    const failed = results.filter((r) => r.status === 'failed')
+    if (failed.length > 0) {
+      core.setFailed(`uSync failed: ${failed.map((r) => r.title).join(', ')}`)
+    }
+  } catch (error) {
+    core.setFailed(errorMessage(error))
+  }
 }

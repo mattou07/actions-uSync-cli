@@ -1,95 +1,80 @@
 {
-  "name": "typescript-action",
-  "description": "GitHub Actions TypeScript template",
-  "version": "0.0.0",
-  "author": "",
+  "name": "usync-action",
+  "description": "GitHub Action that runs uSync on a deployed Umbraco site through the Management API and reports the outcome",
+  "version": "1.0.0",
+  "author": "mattou07",
+  "type": "module",
   "private": true,
-  "homepage": "https://github.com/actions/typescript-action",
+  "homepage": "https://github.com/mattou07/actions-uSync-cli",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/actions/typescript-action.git"
+    "url": "git+https://github.com/mattou07/actions-uSync-cli.git"
   },
   "bugs": {
-    "url": "https://github.com/actions/typescript-action/issues"
+    "url": "https://github.com/mattou07/actions-uSync-cli/issues"
   },
   "keywords": [
     "actions",
-    "node",
-    "setup"
+    "umbraco",
+    "usync",
+    "deployment"
   ],
   "exports": {
     ".": "./dist/index.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "scripts": {
     "bundle": "npm run format:write && npm run package",
-    "ci-test": "jest",
-    "coverage": "make-coverage-badge --output-path ./badges/coverage.svg",
-    "format:write": "prettier --write .",
-    "format:check": "prettier --check .",
-    "lint": "npx eslint . -c ./.github/linters/.eslintrc.yml",
-    "package": "npm run package:root && npm run package:setup && npm run package:invoke && npm run package:sync-content && npm run package:import-structure && npm run package:import-content",
-    "package:root": "ncc build src/index.ts -o dist --source-map --license licenses.txt",
-    "package:setup": "ncc build src/setup/index.ts -o dist/setup --source-map --license licenses.txt",
-    "package:invoke": "ncc build src/invoke/index.ts -o dist/invoke --source-map --license licenses.txt",
-    "package:sync-content": "ncc build src/sync-content/index.ts -o dist/sync-content --source-map --license licenses.txt",
-    "package:import-structure": "ncc build src/import-structure/index.ts -o dist/import-structure --source-map --license licenses.txt",
-    "package:import-content": "ncc build src/import-content/index.ts -o dist/import-content --source-map --license licenses.txt",
+    "ci-test": "cross-env NODE_OPTIONS=--experimental-vm-modules NODE_NO_WARNINGS=1 npx jest --coverage",
+    "coverage": "npx make-coverage-badge --output-path ./badges/coverage.svg",
+    "format:write": "npx prettier --write .",
+    "format:check": "npx prettier --check .",
+    "lint": "npx eslint .",
+    "local-action": "cross-env NODE_OPTIONS=--no-experimental-strip-types npx @github/local-action . src/main.ts .env",
+    "package": "npx rollup --config rollup.config.ts --configPlugin @rollup/plugin-typescript",
     "package:watch": "npm run package -- --watch",
-    "test": "jest",
+    "test": "cross-env NODE_OPTIONS=--experimental-vm-modules NODE_NO_WARNINGS=1 npx jest",
     "all": "npm run format:write && npm run lint && npm run test && npm run coverage && npm run package"
   },
-  "jest": {
-    "preset": "ts-jest",
-    "verbose": true,
-    "clearMocks": true,
-    "testEnvironment": "node",
-    "moduleFileExtensions": [
-      "js",
-      "ts"
-    ],
-    "testMatch": [
-      "**/*.test.ts"
-    ],
-    "testPathIgnorePatterns": [
-      "/node_modules/",
-      "/dist/"
-    ],
-    "transform": {
-      "^.+\\.ts$": "ts-jest"
-    },
-    "coverageReporters": [
-      "json-summary",
-      "text",
-      "lcov"
-    ],
-    "collectCoverage": true,
-    "collectCoverageFrom": [
-      "./src/**"
-    ]
-  },
+  "license": "MIT",
   "dependencies": {
-    "@actions/core": "^1.10.1",
-    "@actions/exec": "^1.1.1"
+    "@actions/artifact": "^2.1.7",
+    "@actions/core": "^1.11.1"
   },
   "devDependencies": {
-    "@jest/globals": "^29.7.0",
-    "@types/jest": "^29.5.12",
-    "@types/node": "^22.5.0",
-    "@typescript-eslint/eslint-plugin": "^7.17.0",
-    "@typescript-eslint/parser": "^7.17.0",
-    "@vercel/ncc": "^0.38.1",
-    "eslint": "^8.57.0",
-    "eslint-plugin-github": "^5.0.1",
-    "eslint-plugin-jest": "^28.8.0",
-    "eslint-plugin-jsonc": "^2.16.0",
-    "eslint-plugin-prettier": "^5.2.1",
+    "@eslint/compat": "^1.2.9",
+    "@eslint/eslintrc": "^3.3.1",
+    "@eslint/js": "^9.28.0",
+    "@github/local-action": "^3.2.1",
+    "@jest/globals": "^30.0.0",
+    "@rollup/plugin-commonjs": "^28.0.1",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "@rollup/plugin-typescript": "^12.1.1",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^24.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.33.1",
+    "@typescript-eslint/parser": "^8.32.1",
+    "cross-env": "^10.1.0",
+    "eslint": "^9.28.0",
+    "eslint-config-prettier": "^10.1.5",
+    "eslint-import-resolver-typescript": "^4.4.3",
+    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-jest": "^28.13.0",
+    "eslint-plugin-prettier": "^5.4.1",
+    "globals": "^16.2.0",
     "jest": "^29.7.0",
     "make-coverage-badge": "^1.2.0",
-    "prettier": "^3.3.3",
-    "ts-jest": "^29.2.4",
-    "typescript": "^5.5.4"
+    "prettier": "^3.5.3",
+    "rollup": "^4.42.0",
+    "ts-jest": "^29.3.4",
+    "ts-jest-resolver": "^2.0.1",
+    "tslib": "^2.8.1",
+    "typescript": "^5.8.3"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "*"
   }
 }
