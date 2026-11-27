@@ -9,6 +9,7 @@ import {
 import { tmpdir } from 'node:os'
 import type { ActionInputs } from '../src/inputs.js'
 import type { StageContext, StageResult } from '../src/stages/types.js'
+import { ArtifactUploadUnavailableError } from '../src/stages/types.js'
 import { makeInputs } from './fixtures/stage-context.js'
 
 const core = {
@@ -59,6 +60,7 @@ const failed = (id: StageResult['id']): StageResult => ({
 })
 
 const originalTemp = process.env.RUNNER_TEMP
+const originalToken = process.env.ACTIONS_RUNTIME_TOKEN
 
 beforeEach(() => {
   jest.resetAllMocks()
@@ -67,11 +69,14 @@ beforeEach(() => {
   writeResultsFile.mockResolvedValue('/tmp/usync-results.json')
   writeSummary.mockResolvedValue()
   process.env.RUNNER_TEMP = '/runner/temp'
+  process.env.ACTIONS_RUNTIME_TOKEN = 'placeholder-token'
 })
 
 afterEach(() => {
   if (originalTemp === undefined) delete process.env.RUNNER_TEMP
   else process.env.RUNNER_TEMP = originalTemp
+  if (originalToken === undefined) delete process.env.ACTIONS_RUNTIME_TOKEN
+  else process.env.ACTIONS_RUNTIME_TOKEN = originalToken
 })
 
 describe('run', () => {
@@ -116,6 +121,17 @@ describe('run', () => {
 
     expect(uploaded).toEqual({ id: 7, size: 42 })
     expect(uploadArtifact).toHaveBeenCalledWith('name', ['/dir/a.zip'], '/dir')
+  })
+
+  it('throws ArtifactUploadUnavailableError without ACTIONS_RUNTIME_TOKEN', async () => {
+    delete process.env.ACTIONS_RUNTIME_TOKEN
+    await run()
+    const ctx = runPipeline.mock.calls[0][0]
+
+    await expect(
+      ctx.artifacts.upload('name', '/dir/a.zip', '/dir')
+    ).rejects.toBeInstanceOf(ArtifactUploadUnavailableError)
+    expect(uploadArtifact).not.toHaveBeenCalled()
   })
 
   it('fails the action listing the failed stages', async () => {

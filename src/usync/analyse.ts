@@ -25,11 +25,19 @@ export interface ItemWarning {
   detail: USyncChange
 }
 
+/** One handler summary as reported by uSync (display names, e.g. `Media Types`). */
 export interface HandlerResult {
   name: string
   changes: number
-  errors: number
   inError: boolean
+}
+
+/**
+ * Display label for an item's handler alias: `ContentHandler` -> `Content`.
+ * Only for display; identity comparisons must keep using the raw value.
+ */
+export function handlerLabel(handler: string): string {
+  return handler.replace(/(?<=.)Handler$/, '')
 }
 
 export interface Analysis {
@@ -66,42 +74,19 @@ export function analyse(
     }
   }
 
-  const handlers = new Map<string, HandlerResult>()
-  for (const s of status ?? []) {
-    handlers.set(s.name, {
-      name: s.name,
-      changes: s.changes,
-      errors: 0,
-      inError: s.inError
-    })
-  }
-  // Handlers the server never reported on get our own change count.
-  const ownChanges = new Map<string, number>()
-  for (const item of changes) {
-    ownChanges.set(item.handler, (ownChanges.get(item.handler) ?? 0) + 1)
-  }
-  for (const item of items) {
-    let handler = handlers.get(item.handler)
-    if (!handler) {
-      handler = {
-        name: item.handler,
-        changes: ownChanges.get(item.handler) ?? 0,
-        errors: 0,
-        inError: false
-      }
-      handlers.set(item.handler, handler)
-    }
-    if (isErrorAction(item)) {
-      handler.errors += 1
-      handler.inError = true
-    }
-  }
+  // Handler summaries use display names while items use handler aliases, so
+  // the two cannot be joined reliably: the table comes from the status only.
+  const handlers: HandlerResult[] = (status ?? []).map((s) => ({
+    name: s.name,
+    changes: s.changes,
+    inError: s.inError
+  }))
 
   return {
     total: items.length,
     changes,
     errors,
     warnings,
-    handlers: [...handlers.values()]
+    handlers
   }
 }

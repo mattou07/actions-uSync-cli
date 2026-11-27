@@ -2,6 +2,7 @@ import { incompleteNote, runPerformStage } from './import.js'
 import type { PerformData } from './import.js'
 import type { Stage } from './types.js'
 import type { USyncActionView } from '../types/usync.js'
+import { handlerLabel } from '../usync/analyse.js'
 import { safeWarning } from '../utils/safe-log.js'
 
 export interface ReportData extends PerformData {
@@ -66,7 +67,9 @@ export const reportStage: Stage = {
     data.unapplied = unapplied
     data.appeared = appeared
     for (const item of unapplied) {
-      safeWarning(`${item.handler}: ${item.name} (${item.change})`)
+      safeWarning(
+        `${handlerLabel(item.handler)}: ${item.name} (${item.change})`
+      )
     }
 
     const parts: string[] = []

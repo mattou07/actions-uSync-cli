@@ -1,4 +1,4 @@
-import { analyse } from '../usync/analyse.js'
+import { analyse, handlerLabel } from '../usync/analyse.js'
 import type { Analysis } from '../usync/analyse.js'
 import { runPerform } from '../usync/perform.js'
 import type { PerformResult } from '../usync/perform.js'
@@ -11,6 +11,8 @@ export interface PerformData {
   analysis: Analysis
   artifactName?: string
   zipBytes?: number
+  /** Where the export zip was kept when it could not be uploaded. */
+  zipPath?: string
 }
 
 const MAX_LOGGED_ITEMS = 100
@@ -21,7 +23,9 @@ function logItems(items: USyncActionView[]): void {
     const props = item.details?.length
       ? ` (${item.details.length} properties)`
       : ''
-    safeInfo(`  ${item.handler}: ${item.name} - ${item.change}${props}`)
+    safeInfo(
+      `  ${handlerLabel(item.handler)}: ${item.name} - ${item.change}${props}`
+    )
   }
   if (items.length > MAX_LOGGED_ITEMS) {
     safeInfo(
@@ -49,7 +53,7 @@ export async function runPerformStage(
   if (action !== 'Export') logItems(analysis.changes)
   for (const item of analysis.errors) {
     safeWarning(
-      `${item.handler}: ${item.name} (${item.change})${item.message ? ` - ${item.message}` : ''}`
+      `${handlerLabel(item.handler)}: ${item.name} (${item.change})${item.message ? ` - ${item.message}` : ''}`
     )
   }
   return { result, analysis }

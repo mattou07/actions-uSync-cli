@@ -166,6 +166,28 @@ describe('setOutputs', () => {
     }
   })
 
+  it('leaves the export artifact empty when the upload was unavailable', () => {
+    setOutputs(
+      [
+        result(
+          'export',
+          'warning',
+          performData([], { zipPath: '/tmp/usync-export.zip' })
+        )
+      ],
+      'f'
+    )
+    expect(outputs()['export-artifact']).toBe('')
+  })
+
+  it('reports the umbraco version as stored by the connect stage', () => {
+    setOutputs(
+      [result('connect', 'success', { umbracoVersion: '17.8.2' })],
+      'f'
+    )
+    expect(outputs()['umbraco-version']).toBe('17.8.2')
+  })
+
   it('leaves the export artifact empty when nothing was uploaded', () => {
     setOutputs([result('export', 'success', performData([]))], 'f')
     expect(outputs()['export-artifact']).toBe('')

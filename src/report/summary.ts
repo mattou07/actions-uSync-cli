@@ -5,11 +5,14 @@ import type { PerformData } from '../stages/import.js'
 import type { ReportData } from '../stages/report.js'
 import type { SiteInfo, StageResult, StageStatus } from '../stages/types.js'
 import type { USyncActionView } from '../types/usync.js'
+import { handlerLabel } from '../usync/analyse.js'
 import { escapeHtml } from '../utils/safe-log.js'
 
 const MAX_FAILED_ROWS = 100
 const MAX_CHANGED_ROWS = 50
 const MAX_HANDLER_ROWS = 100
+/** uSync's pseudo-handler for the post-import step; only shown when it failed. */
+const POST_IMPORT = 'Post Import'
 const MAX_DIFFS_PER_ITEM = 10
 const MAX_VALUE_LENGTH = 200
 const MAX_NAME_LENGTH = 200
@@ -76,15 +79,20 @@ function addPerformSection(
   const { analysis } = data
   summary.addHeading(escapeHtml(stage.title), 2)
 
-  if (analysis.handlers.length > 0) {
+  const handlers = analysis.handlers.filter(
+    (h) => (h.changes > 0 || h.inError) && (h.name !== POST_IMPORT || h.inError)
+  )
+  if (handlers.length > 0) {
     summary.addTable([
-      headerRow('Handler', 'Changes', 'Errors'),
-      ...capped(analysis.handlers, MAX_HANDLER_ROWS, 3, (h) => [
+      headerRow('Handler', 'Changes', 'Status'),
+      ...capped(handlers, MAX_HANDLER_ROWS, 3, (h) => [
         cell(h.name, MAX_NAME_LENGTH),
         String(h.changes),
-        String(h.errors)
+        h.inError ? '❌' : '✅'
       ])
     ])
+  } else {
+    summary.addRaw('<p>No handler reported changes.</p>', true)
   }
 
   if (analysis.errors.length > 0) {
@@ -92,7 +100,7 @@ function addPerformSection(
     summary.addTable([
       headerRow('Handler', 'Item', 'Change', 'Message'),
       ...capped(analysis.errors, MAX_FAILED_ROWS, 4, (i) => [
-        cell(i.handler, MAX_NAME_LENGTH),
+        cell(handlerLabel(i.handler), MAX_NAME_LENGTH),
         cell(i.name, MAX_NAME_LENGTH),
         escapeHtml(i.change),
         cell(i.message, MAX_MESSAGE_LENGTH)
@@ -106,7 +114,7 @@ function addPerformSection(
     summary.addTable([
       headerRow('Handler', 'Item', 'Change', ...(withDiffs ? ['Details'] : [])),
       ...capped(analysis.changes, MAX_CHANGED_ROWS, withDiffs ? 4 : 3, (i) => [
-        cell(i.handler, MAX_NAME_LENGTH),
+        cell(handlerLabel(i.handler), MAX_NAME_LENGTH),
         cell(i.name, MAX_NAME_LENGTH),
         escapeHtml(i.change),
         ...(withDiffs ? [diffText(i)] : [])
@@ -131,7 +139,7 @@ function addItemTable(
   summary.addTable([
     headerRow('Handler', 'Item', 'Change'),
     ...capped(items, MAX_CHANGED_ROWS, 3, (i) => [
-      cell(i.handler, MAX_NAME_LENGTH),
+      cell(handlerLabel(i.handler), MAX_NAME_LENGTH),
       cell(i.name, MAX_NAME_LENGTH),
       escapeHtml(i.change)
     ])

@@ -12,7 +12,8 @@ inputs:
   server:
     description:
       'Base URL of the deployed Umbraco site, for example https://example.com.
-      Must be https (http is allowed for localhost only).'
+      Must be https (http is allowed for localhost only, but Umbraco only issues
+      tokens over HTTPS, so use the https URL even locally).'
     required: true
   client-id:
     description:

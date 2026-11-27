@@ -105,3 +105,6 @@ __tests__/runner/*
 github/
 
 .github/prompts/
+
+# Local runs (npm run local-run)
+.local-run/

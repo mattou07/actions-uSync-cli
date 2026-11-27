@@ -224021,6 +224021,13 @@ const SERVER_STATUS_SUCCESS = 'Success';
 function errorMessage(error) {
     return error instanceof Error ? error.message : String(error);
 }
+/** Thrown by an uploader when artifacts cannot be uploaded (not on a GitHub runner). */
+class ArtifactUploadUnavailableError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'ArtifactUploadUnavailableError';
+    }
+}
 
 const checkConnectionsStage = {
     id: 'check-connections',
@@ -224174,6 +224181,10 @@ async function loadSettings(ctx) {
         throw error;
     }
 }
+/** Drops SemVer build metadata (`17.8.2+6085291` -> `17.8.2`); prereleases stay. */
+function stripBuildMetadata(version) {
+    return version?.split('+')[0];
+}
 async function bestEffort(what, work) {
     try {
         return await work;
@@ -224236,8 +224247,8 @@ async function run$1(ctx) {
     data.set = site.set;
     data.processingMode = settings?.processingMode;
     const information = await bestEffort('server information', ctx.umbraco.getServerInformation());
-    site.umbracoVersion = information?.version;
-    site.usyncVersion = await bestEffort('uSync version', ctx.usync.getVersion());
+    site.umbracoVersion = stripBuildMetadata(information?.version);
+    site.usyncVersion = stripBuildMetadata(await bestEffort('uSync version', ctx.usync.getVersion()));
     data.umbracoVersion = site.umbracoVersion;
     data.usyncVersion = site.usyncVersion;
     let warning;
@@ -224287,6 +224298,13 @@ const NON_CHANGES = [
     'Hidden',
     'Information'
 ];
+/**
+ * Display label for an item's handler alias: `ContentHandler` -> `Content`.
+ * Only for display; identity comparisons must keep using the raw value.
+ */
+function handlerLabel(handler) {
+    return handler.replace(/(?<=.)Handler$/, '');
+}
 function isErrorAction(a) {
     return !a.success || ERROR_CHANGES.includes(a.change);
 }
@@ -224305,42 +224323,19 @@ function analyse(actions, status) {
                 warnings.push({ item, detail });
         }
     }
-    const handlers = new Map();
-    for (const s of status ?? []) {
-        handlers.set(s.name, {
-            name: s.name,
-            changes: s.changes,
-            errors: 0,
-            inError: s.inError
-        });
-    }
-    // Handlers the server never reported on get our own change count.
-    const ownChanges = new Map();
-    for (const item of changes) {
-        ownChanges.set(item.handler, (ownChanges.get(item.handler) ?? 0) + 1);
-    }
-    for (const item of items) {
-        let handler = handlers.get(item.handler);
-        if (!handler) {
-            handler = {
-                name: item.handler,
-                changes: ownChanges.get(item.handler) ?? 0,
-                errors: 0,
-                inError: false
-            };
-            handlers.set(item.handler, handler);
-        }
-        if (isErrorAction(item)) {
-            handler.errors += 1;
-            handler.inError = true;
-        }
-    }
+    // Handler summaries use display names while items use handler aliases, so
+    // the two cannot be joined reliably: the table comes from the status only.
+    const handlers = (status ?? []).map((s) => ({
+        name: s.name,
+        changes: s.changes,
+        inError: s.inError
+    }));
     return {
         total: items.length,
         changes,
         errors,
         warnings,
-        handlers: [...handlers.values()]
+        handlers
     };
 }
 
@@ -224515,7 +224510,7 @@ function logItems(items) {
         const props = item.details?.length
             ? ` (${item.details.length} properties)`
             : '';
-        safeInfo(`  ${item.handler}: ${item.name} - ${item.change}${props}`);
+        safeInfo(`  ${handlerLabel(item.handler)}: ${item.name} - ${item.change}${props}`);
     }
     if (items.length > MAX_LOGGED_ITEMS) {
         safeInfo(`  ...and ${items.length - MAX_LOGGED_ITEMS} more (see the job summary)`);
@@ -224536,7 +224531,7 @@ async function runPerformStage(ctx, action, clean) {
     if (action !== 'Export')
         logItems(analysis.changes);
     for (const item of analysis.errors) {
-        safeWarning(`${item.handler}: ${item.name} (${item.change})${item.message ? ` - ${item.message}` : ''}`);
+        safeWarning(`${handlerLabel(item.handler)}: ${item.name} (${item.change})${item.message ? ` - ${item.message}` : ''}`);
     }
     return { result, analysis };
 }
@@ -224596,9 +224591,22 @@ const exportStage = {
             const file = path$1.join(dir, `${inputs.exportArtifactName}.zip`);
             await fs.mkdir(dir, { recursive: true });
             await fs.writeFile(file, zip);
-            await ctx.artifacts.upload(inputs.exportArtifactName, file, dir);
-            data.artifactName = inputs.exportArtifactName;
             data.zipBytes = zip.length;
+            try {
+                await ctx.artifacts.upload(inputs.exportArtifactName, file, dir);
+            }
+            catch (error) {
+                if (!(error instanceof ArtifactUploadUnavailableError))
+                    throw error;
+                data.zipPath = file;
+                coreExports.warning(`${error.message}; the export zip was kept at ${file}`);
+                return {
+                    status: failed ? 'failed' : 'warning',
+                    summary: `${summary}; artifact upload is only available on GitHub runners, zip kept at ${file}`,
+                    data
+                };
+            }
+            data.artifactName = inputs.exportArtifactName;
             coreExports.info(`Uploaded artifact ${inputs.exportArtifactName} (${zip.length} bytes)`);
             summary += `; uploaded artifact ${inputs.exportArtifactName}`;
         }
@@ -224756,7 +224764,7 @@ const reportStage = {
         data.unapplied = unapplied;
         data.appeared = appeared;
         for (const item of unapplied) {
-            safeWarning(`${item.handler}: ${item.name} (${item.change})`);
+            safeWarning(`${handlerLabel(item.handler)}: ${item.name} (${item.change})`);
         }
         const parts = [];
         if (unapplied.length > 0) {
@@ -224885,6 +224893,8 @@ async function writeResultsFile(results, tempDir) {
 const MAX_FAILED_ROWS = 100;
 const MAX_CHANGED_ROWS = 50;
 const MAX_HANDLER_ROWS = 100;
+/** uSync's pseudo-handler for the post-import step; only shown when it failed. */
+const POST_IMPORT = 'Post Import';
 const MAX_DIFFS_PER_ITEM = 10;
 const MAX_VALUE_LENGTH = 200;
 const MAX_NAME_LENGTH = 200;
@@ -224930,22 +224940,26 @@ function diffText(item) {
 function addPerformSection(summary, stage, data) {
     const { analysis } = data;
     summary.addHeading(escapeHtml(stage.title), 2);
-    if (analysis.handlers.length > 0) {
+    const handlers = analysis.handlers.filter((h) => (h.changes > 0 || h.inError) && (h.name !== POST_IMPORT || h.inError));
+    if (handlers.length > 0) {
         summary.addTable([
-            headerRow('Handler', 'Changes', 'Errors'),
-            ...capped(analysis.handlers, MAX_HANDLER_ROWS, 3, (h) => [
+            headerRow('Handler', 'Changes', 'Status'),
+            ...capped(handlers, MAX_HANDLER_ROWS, 3, (h) => [
                 cell(h.name, MAX_NAME_LENGTH),
                 String(h.changes),
-                String(h.errors)
+                h.inError ? '❌' : '✅'
             ])
         ]);
+    }
+    else {
+        summary.addRaw('<p>No handler reported changes.</p>', true);
     }
     if (analysis.errors.length > 0) {
         summary.addHeading('Failed items', 3);
         summary.addTable([
             headerRow('Handler', 'Item', 'Change', 'Message'),
             ...capped(analysis.errors, MAX_FAILED_ROWS, 4, (i) => [
-                cell(i.handler, MAX_NAME_LENGTH),
+                cell(handlerLabel(i.handler), MAX_NAME_LENGTH),
                 cell(i.name, MAX_NAME_LENGTH),
                 escapeHtml(i.change),
                 cell(i.message, MAX_MESSAGE_LENGTH)
@@ -224958,7 +224972,7 @@ function addPerformSection(summary, stage, data) {
         summary.addTable([
             headerRow('Handler', 'Item', 'Change', ...(withDiffs ? ['Details'] : [])),
             ...capped(analysis.changes, MAX_CHANGED_ROWS, withDiffs ? 4 : 3, (i) => [
-                cell(i.handler, MAX_NAME_LENGTH),
+                cell(handlerLabel(i.handler), MAX_NAME_LENGTH),
                 cell(i.name, MAX_NAME_LENGTH),
                 escapeHtml(i.change),
                 ...(withDiffs ? [diffText(i)] : [])
@@ -224978,7 +224992,7 @@ function addItemTable(summary, heading, items) {
     summary.addTable([
         headerRow('Handler', 'Item', 'Change'),
         ...capped(items, MAX_CHANGED_ROWS, 3, (i) => [
-            cell(i.handler, MAX_NAME_LENGTH),
+            cell(handlerLabel(i.handler), MAX_NAME_LENGTH),
             cell(i.name, MAX_NAME_LENGTH),
             escapeHtml(i.change)
         ])
@@ -225046,6 +225060,9 @@ async function writeSummary(results, site, server) {
 function createArtifactUploader() {
     return {
         async upload(name, filePath, rootDir) {
+            if (!process.env.ACTIONS_RUNTIME_TOKEN) {
+                throw new ArtifactUploadUnavailableError('Artifact upload is only available on GitHub runners (ACTIONS_RUNTIME_TOKEN is not set)');
+            }
             const response = await new artifactExports.DefaultArtifactClient().uploadArtifact(name, [filePath], rootDir);
             return { id: response.id, size: response.size };
         }

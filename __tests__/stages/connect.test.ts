@@ -87,6 +87,41 @@ describe('connectStage', () => {
     expect(data.waitedMs).toBe(27000)
   })
 
+  it('strips build metadata from the versions but keeps prerelease tags', async () => {
+    const t = ready()
+    t.umbraco.getServerInformation.mockResolvedValue({
+      version: '17.8.2+6085291'
+    })
+    t.usync.getVersion.mockResolvedValue('17.6.3+abc123')
+    const outcome = await connectStage.run(t.ctx)
+    expect(t.ctx.site).toMatchObject({
+      umbracoVersion: '17.8.2',
+      usyncVersion: '17.6.3'
+    })
+    expect(outcome.data).toMatchObject({
+      umbracoVersion: '17.8.2',
+      usyncVersion: '17.6.3'
+    })
+    expect(outcome.summary).toBe(
+      'Umbraco 17.8.2 is running; uSync 17.6.3; set Live'
+    )
+
+    t.umbraco.getServerInformation.mockResolvedValue({
+      version: '18.0.0-rc1+abc'
+    })
+    await connectStage.run(t.ctx)
+    expect(t.ctx.site.umbracoVersion).toBe('18.0.0-rc1')
+  })
+
+  it('leaves unknown versions undefined', async () => {
+    const t = ready()
+    t.umbraco.getServerInformation.mockRejectedValue(new Error('nope'))
+    t.usync.getVersion.mockResolvedValue(undefined)
+    await connectStage.run(t.ctx)
+    expect(t.ctx.site.umbracoVersion).toBeUndefined()
+    expect(t.ctx.site.usyncVersion).toBeUndefined()
+  })
+
   it('fails immediately when the site cannot boot', async () => {
     const t = ready()
     t.umbraco.getServerStatus.mockResolvedValue({ serverStatus: 'BootFailed' })

@@ -98,6 +98,11 @@ async function loadSettings(ctx: StageContext): Promise<void> {
   }
 }
 
+/** Drops SemVer build metadata (`17.8.2+6085291` -> `17.8.2`); prereleases stay. */
+function stripBuildMetadata(version: string | undefined): string | undefined {
+  return version?.split('+')[0]
+}
+
 async function bestEffort<T>(
   what: string,
   work: Promise<T>
@@ -177,8 +182,10 @@ async function run(ctx: StageContext): Promise<StageOutcome> {
     'server information',
     ctx.umbraco.getServerInformation()
   )
-  site.umbracoVersion = information?.version
-  site.usyncVersion = await bestEffort('uSync version', ctx.usync.getVersion())
+  site.umbracoVersion = stripBuildMetadata(information?.version)
+  site.usyncVersion = stripBuildMetadata(
+    await bestEffort('uSync version', ctx.usync.getVersion())
+  )
   data.umbracoVersion = site.umbracoVersion
   data.usyncVersion = site.usyncVersion
 

@@ -15,7 +15,7 @@ talks to the `server` it is given. No dotnet, no shell calls.
 | Type check                       | `npx tsc --noEmit -p tsconfig.json`                                                         |
 | Lint / format check              | `npm run lint` / `npm run format:check`                                                     |
 | Format + rebuild `dist/`         | `npm run bundle`                                                                            |
-| Run the action locally           | `npm run local-action`                                                                      |
+| Run the action locally           | `npm run bundle` then `npm run local-run`                                                   |
 
 `dist/` is committed and is what GitHub runs. After any change in `src/`, run
 `npm run bundle` and commit `dist/` too, or the `check-dist` workflow fails.
@@ -53,15 +53,25 @@ talks to the `server` it is given. No dotnet, no shell calls.
 1. `npm ci`
 2. Copy `.env.example` to `.env` (gitignored) and fill it in. Inputs are
    `INPUT_<NAME>` with hyphens kept, e.g. `INPUT_CLIENT-ID`.
-3. `npm run local-action` runs `src/main.ts` through `@github/local-action` with
-   that `.env`.
+3. `npm run bundle`, then `npm run local-run` (`script/local-run.mjs`). It runs
+   `dist/index.js` like a runner: `INPUT_*` from `.env`, `INPUT_X=value` CLI
+   overrides, and outputs, summary and results file in `.local-run/`
+   (gitignored), whose paths it prints.
 
 Things that differ from a real runner:
 
-- `local-action` exits 0 even when the action fails. Judge by `::error::` lines
-  and the summary file.
-- On Node 25+, `@github/local-action` needs
-  `NODE_OPTIONS=--no-experimental-strip-types` (the npm script sets it).
+- It runs `dist/`, so rebuild after changing `src/`.
+- Use the site's https URL (e.g. `https://localhost:44324`): Umbraco's token
+  endpoint (OpenIddict) only accepts HTTPS, so `http://localhost` cannot
+  authenticate. The http-for-localhost exception stays for TLS-terminating
+  proxies.
+- Node does not trust the ASP.NET dev certificate (self-signed leaf, not a CA,
+  so `NODE_EXTRA_CA_CERTS` does not help). Set `NODE_TLS_REJECT_UNAUTHORIZED=0`
+  for local runs only, never in a workflow.
+- You need a local API user (backoffice Users > API Users) with a client ID
+  starting `umbraco-back-office-`.
+- Artifact upload needs `ACTIONS_RUNTIME_TOKEN`; locally the Export stage warns
+  and keeps the zip in the run folder.
 - Import and export change real data. Point it at a test site.
 
 ## Rules for changes

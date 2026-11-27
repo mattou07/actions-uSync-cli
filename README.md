@@ -69,30 +69,30 @@ Modes are flag combinations, not separate commands.
 
 ## Inputs
 
-| Input                      | Required | Default        | Description                                                                                         |
-| -------------------------- | -------- | -------------- | --------------------------------------------------------------------------------------------------- |
-| `server`                   | yes      |                | Base URL of the deployed site, for example `https://example.com`. A virtual directory path is kept. |
-| `client-id`                | yes      |                | Client ID of the Umbraco API user. Must start with `umbraco-back-office-`.                          |
-| `client-secret`            | yes      |                | Client secret of the API user. Masked in logs.                                                      |
-| `wait`                     | no       | `true`         | Run the wait stage.                                                                                 |
-| `wait-timeout-minutes`     | no       | `10`           | How long to wait for the site to be ready.                                                          |
-| `wait-for-startup-import`  | no       | `true`         | Wait for a startup or first-boot import to finish (uSync 17.6.3+, skipped otherwise).               |
-| `import`                   | no       | `true`         | Run the import.                                                                                     |
-| `force`                    | no       | `false`        | Force the import even for unchanged items.                                                          |
-| `set`                      | no       | empty          | uSync set. Empty uses the site's default set.                                                       |
-| `group`                    | no       | `all`          | Handler group to process.                                                                           |
-| `report`                   | no       | `true`         | Run the report.                                                                                     |
-| `fail-on-changes`          | no       | `false`        | Fail if the report finds pending changes.                                                           |
-| `rebuild-cache`            | no       | `false`        | Rebuild the published cache.                                                                        |
-| `rebuild-indexes`          | no       | empty          | Index names to rebuild, separated by commas or new lines. Empty is off.                             |
-| `export`                   | no       | `false`        | Run an export.                                                                                      |
-| `export-clean`             | no       | `false`        | Clean the export folder first.                                                                      |
-| `download-export`          | no       | `false`        | Download the export zip and upload it as an artifact. Needs an admin API user.                      |
-| `export-artifact-name`     | no       | `usync-export` | Artifact name. Letters, numbers, `.`, `_` and `-` only.                                             |
-| `check-connections`        | no       | `true`         | Check the site's Publisher servers (needs uSync.Complete).                                          |
-| `fail-on-connection-error` | no       | `false`        | Fail instead of warn when a connected server is not `Success`.                                      |
-| `timeout-minutes`          | no       | `30`           | Maximum time for one long operation (import, report, export, background polling, cache rebuild).    |
-| `request-timeout-seconds`  | no       | `60`           | Timeout for a single HTTP request. 429, 502, 503, 504 and network errors are retried with backoff.  |
+| Input                      | Required | Default        | Description                                                                                                        |
+| -------------------------- | -------- | -------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `server`                   | yes      |                | Base URL of the deployed site, for example `https://example.com`. A virtual directory path is kept. Must be https. |
+| `client-id`                | yes      |                | Client ID of the Umbraco API user. Must start with `umbraco-back-office-`.                                         |
+| `client-secret`            | yes      |                | Client secret of the API user. Masked in logs.                                                                     |
+| `wait`                     | no       | `true`         | Run the wait stage.                                                                                                |
+| `wait-timeout-minutes`     | no       | `10`           | How long to wait for the site to be ready.                                                                         |
+| `wait-for-startup-import`  | no       | `true`         | Wait for a startup or first-boot import to finish (uSync 17.6.3+, skipped otherwise).                              |
+| `import`                   | no       | `true`         | Run the import.                                                                                                    |
+| `force`                    | no       | `false`        | Force the import even for unchanged items.                                                                         |
+| `set`                      | no       | empty          | uSync set. Empty uses the site's default set.                                                                      |
+| `group`                    | no       | `all`          | Handler group to process.                                                                                          |
+| `report`                   | no       | `true`         | Run the report.                                                                                                    |
+| `fail-on-changes`          | no       | `false`        | Fail if the report finds pending changes.                                                                          |
+| `rebuild-cache`            | no       | `false`        | Rebuild the published cache.                                                                                       |
+| `rebuild-indexes`          | no       | empty          | Index names to rebuild, separated by commas or new lines. Empty is off.                                            |
+| `export`                   | no       | `false`        | Run an export.                                                                                                     |
+| `export-clean`             | no       | `false`        | Clean the export folder first.                                                                                     |
+| `download-export`          | no       | `false`        | Download the export zip and upload it as an artifact. Needs an admin API user.                                     |
+| `export-artifact-name`     | no       | `usync-export` | Artifact name. Letters, numbers, `.`, `_` and `-` only.                                                            |
+| `check-connections`        | no       | `true`         | Check the site's Publisher servers (needs uSync.Complete).                                                         |
+| `fail-on-connection-error` | no       | `false`        | Fail instead of warn when a connected server is not `Success`.                                                     |
+| `timeout-minutes`          | no       | `30`           | Maximum time for one long operation (import, report, export, background polling, cache rebuild).                   |
+| `request-timeout-seconds`  | no       | `60`           | Timeout for a single HTTP request. 429, 502, 503, 504 and network errors are retried with backoff.                 |
 
 ## Outputs
 
@@ -300,8 +300,9 @@ enable session affinity for the action's requests.
 ## Security
 
 - `server` must be https. http is allowed only for `localhost`, `127.0.0.1`,
-  `[::1]` and `*.localhost`. Credentials in the URL, query strings and fragments
-  are rejected.
+  `[::1]` and `*.localhost` (Umbraco's token endpoint itself only accepts HTTPS,
+  so for local testing use the site's https URL; see Local development).
+  Credentials in the URL, query strings and fragments are rejected.
 - `client-secret` and every access token are masked in logs. Tokens are never
   written to logs, and error bodies are capped and redacted.
 - The action only contacts the `server` you give it.
@@ -314,11 +315,34 @@ enable session affinity for the action's requests.
 ```bash
 npm ci
 cp .env.example .env     # fill in INPUT_SERVER, INPUT_CLIENT-ID, INPUT_CLIENT-SECRET
-npm run local-action     # runs src/main.ts with the .env
-npm run ci-test          # tests, 100% coverage enforced
 npm run bundle           # format and rebuild dist/
+npm run local-run        # runs dist/index.js like a runner, using the .env
+npm run ci-test          # tests, 100% coverage enforced
 ```
 
-`local-action` exits 0 even when the action fails, so look for `::error::`
-lines. Use a site meant for testing: the import and export stages change real
-data.
+`local-run` (`script/local-run.mjs`) loads the `INPUT_*` lines from `.env`,
+accepts overrides such as `npm run local-run -- INPUT_IMPORT=false`, and writes
+the outputs, job summary and results file to `.local-run/` (gitignored, or
+`--dir <folder>`). It prints where they are. Rebuild with `npm run bundle` after
+changing `src/`, because it runs `dist/`.
+
+Local runs against a site on your machine:
+
+- Use the site's **https** URL (for example `https://localhost:44324`).
+  Umbraco's token endpoint (OpenIddict) only accepts HTTPS, so a plain
+  `http://localhost` server cannot authenticate. The action still allows http
+  for localhost, which is only useful behind a TLS-terminating proxy.
+- Node does not trust the ASP.NET development certificate (it is a self-signed
+  leaf, not a CA, so even `NODE_EXTRA_CA_CERTS` rejects it). Set
+  `NODE_TLS_REJECT_UNAUTHORIZED=0` for local runs only, for example
+  `NODE_TLS_REJECT_UNAUTHORIZED=0 npm run local-run`. Never set it in a
+  workflow.
+- Create a local API user in the backoffice (Users > API Users > Create, in a
+  group with access to the Settings section; use an admin group for
+  `download-export`). Its client ID must start with `umbraco-back-office-`. Put
+  the client ID and secret in `.env`.
+- Artifact upload only works on GitHub runners. Locally, `download-export` keeps
+  the zip in the run folder and the Export stage reports a warning with its
+  path.
+
+Use a site meant for testing: the import and export stages change real data.

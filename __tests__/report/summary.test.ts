@@ -108,10 +108,10 @@ describe('writeSummary', () => {
 
     const [, handlers, failed, changed] = tables()
     expect(handlers.map((r) => r.map((c) => c.data))).toEqual([
-      ['Handler', 'Changes', 'Errors'],
-      ['Data Types', '1', '0'],
-      ['Content Types', '1', '0'],
-      ['Templates', '0', '1']
+      ['Handler', 'Changes', 'Status'],
+      ['Data Types', '1', '✅'],
+      ['Content Types', '1', '✅'],
+      ['Templates', '0', '❌']
     ])
     expect(failed[1].map((c) => c.data)).toEqual([
       'Templates',
@@ -125,6 +125,138 @@ describe('writeSummary', () => {
       'Home page',
       'Import'
     ])
+  })
+
+  describe('handler table with real uSync data', () => {
+    const names = [
+      'Languages',
+      'Dictionary',
+      'Datatypes',
+      'Templates',
+      'DocTypes',
+      'Media Types',
+      'Member Types',
+      'Media',
+      'Content',
+      'Blueprints',
+      'Domains',
+      'Relations',
+      'Webhooks',
+      'Post Import'
+    ]
+    const status = (
+      overrides: Record<string, Partial<{ changes: number; inError: boolean }>>
+    ) =>
+      names.map((name) => ({
+        name,
+        status: 'Complete' as const,
+        changes: 0,
+        inError: false,
+        ...overrides[name]
+      }))
+    const home: USyncActionView = {
+      key: 'k1',
+      name: 'Home',
+      handler: 'ContentHandler',
+      itemType: 'Umbraco.Cms.Core.Models.IContent',
+      change: 'Update',
+      success: true,
+      details: []
+    }
+    const rowsOf = (t: Row[]) => t.map((r) => r.map((c) => c.data))
+
+    it('lists one Content row, no alias row and no zero-change handlers', async () => {
+      const data = perform([home], status({ Content: { changes: 1 } }))
+      await writeSummary(
+        [stage('import', 'success', data, 'Import')],
+        site,
+        'https://example.com'
+      )
+      const [, handlers, changed] = tables()
+      expect(rowsOf(handlers)).toEqual([
+        ['Handler', 'Changes', 'Status'],
+        ['Content', '1', '✅']
+      ])
+      expect(flat()).not.toContain('ContentHandler')
+      expect(rowsOf(changed)[1]).toEqual(['Content', 'Home', 'Update'])
+    })
+
+    it('writes a single line instead of the table when nothing changed', async () => {
+      await writeSummary(
+        [stage('import', 'success', perform([], status({})), 'Import')],
+        site,
+        'https://example.com'
+      )
+      expect(tables()).toHaveLength(1)
+      expect(
+        calls.some(
+          (c) =>
+            c.method === 'addRaw' &&
+            c.args[0] === '<p>No handler reported changes.</p>'
+        )
+      ).toBe(true)
+    })
+
+    it('hides Post Import unless it is in error', async () => {
+      const quiet = perform(
+        [],
+        status({ 'Post Import': { changes: 2 }, Content: { changes: 1 } })
+      )
+      await writeSummary(
+        [stage('import', 'success', quiet, 'Import')],
+        site,
+        'https://example.com'
+      )
+      expect(rowsOf(tables()[1]).map((r) => r[0])).toEqual([
+        'Handler',
+        'Content'
+      ])
+
+      calls.length = 0
+      const broken = perform([], status({ 'Post Import': { inError: true } }))
+      await writeSummary(
+        [stage('import', 'failed', broken, 'Import')],
+        site,
+        'https://example.com'
+      )
+      expect(rowsOf(tables()[1])).toEqual([
+        ['Handler', 'Changes', 'Status'],
+        ['Post Import', '0', '❌']
+      ])
+    })
+
+    it('shows the label in failed items and still escapes it', async () => {
+      const failedItem = {
+        ...home,
+        handler: '<b>x</b>Handler',
+        change: 'Fail' as const,
+        success: false
+      }
+      await writeSummary(
+        [
+          stage('import', 'failed', perform([failedItem], status({})), 'Import')
+        ],
+        site,
+        'https://example.com'
+      )
+      expect(flat()).not.toContain('<b>')
+      expect(rowsOf(tables()[1])[1][0]).toBe('&lt;b&gt;x&lt;/b&gt;')
+    })
+
+    it('uses the label in the report item tables', async () => {
+      const data = {
+        ...perform([home], status({ Content: { changes: 1 } })),
+        unapplied: [home],
+        appeared: [home]
+      }
+      await writeSummary(
+        [stage('report', 'failed', data, 'Report')],
+        site,
+        'https://example.com'
+      )
+      expect(flat()).not.toContain('ContentHandler')
+      expect(flat()).toContain('Not applied by the import')
+    })
   })
 
   it('shows property diffs for pending changes in a report', async () => {
@@ -297,7 +429,7 @@ describe('writeSummary', () => {
       site,
       'https://example.com'
     )
-    const details = tables()[2][1][3].data
+    const details = tables()[1][1][3].data
     expect(details.startsWith('p: a b')).toBe(true)
     expect(details).toContain('… → (none)')
     expect(details).not.toContain('same')
@@ -332,7 +464,7 @@ describe('writeSummary', () => {
       site,
       'https://example.com'
     )
-    const [, , failedTable, changedTable] = tables()
+    const [, failedTable, changedTable] = tables()
     expect(failedTable).toHaveLength(1 + 100 + 1)
     expect(failedTable.at(-1)?.map((c) => c.data)).toEqual([
       '…and 5 more',
@@ -349,7 +481,7 @@ describe('writeSummary', () => {
     const status = Array.from({ length: 101 }, (_, i) => ({
       name: `H${i}`,
       status: 'Complete' as const,
-      changes: 0,
+      changes: 1,
       inError: false
     }))
     await writeSummary(
@@ -430,7 +562,7 @@ describe('writeSummary', () => {
       site,
       'https://example.com'
     )
-    const [, , failed, changed] = tables()
+    const [, failed, changed] = tables()
     expect(failed[1][3].data).toBe('')
     expect(changed[1][3].data).toBe('')
   })

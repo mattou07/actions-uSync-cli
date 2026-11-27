@@ -4,6 +4,7 @@ import * as core from '@actions/core'
 import { ApiError } from '../api/http.js'
 import { incompleteNote, runPerformStage } from './import.js'
 import type { PerformData } from './import.js'
+import { ArtifactUploadUnavailableError } from './types.js'
 import type { Stage } from './types.js'
 
 export const exportStage: Stage = {
@@ -39,9 +40,20 @@ export const exportStage: Stage = {
       const file = path.join(dir, `${inputs.exportArtifactName}.zip`)
       await fs.mkdir(dir, { recursive: true })
       await fs.writeFile(file, zip)
-      await ctx.artifacts.upload(inputs.exportArtifactName, file, dir)
-      data.artifactName = inputs.exportArtifactName
       data.zipBytes = zip.length
+      try {
+        await ctx.artifacts.upload(inputs.exportArtifactName, file, dir)
+      } catch (error) {
+        if (!(error instanceof ArtifactUploadUnavailableError)) throw error
+        data.zipPath = file
+        core.warning(`${error.message}; the export zip was kept at ${file}`)
+        return {
+          status: failed ? 'failed' : 'warning',
+          summary: `${summary}; artifact upload is only available on GitHub runners, zip kept at ${file}`,
+          data
+        }
+      }
+      data.artifactName = inputs.exportArtifactName
       core.info(
         `Uploaded artifact ${inputs.exportArtifactName} (${zip.length} bytes)`
       )

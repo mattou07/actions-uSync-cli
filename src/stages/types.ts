@@ -72,3 +72,11 @@ export interface Stage {
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
+
+/** Thrown by an uploader when artifacts cannot be uploaded (not on a GitHub runner). */
+export class ArtifactUploadUnavailableError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ArtifactUploadUnavailableError'
+  }
+}

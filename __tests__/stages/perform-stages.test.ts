@@ -17,6 +17,7 @@ import { makeContext } from '../fixtures/stage-context.js'
 import { analyse } from '../../src/usync/analyse.js'
 import type { ReportData } from '../../src/stages/report.js'
 import { ApiError } from '../../src/api/http.js'
+import { ArtifactUploadUnavailableError } from '../../src/stages/types.js'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -253,6 +254,32 @@ describe('reportStage', () => {
       )
     })
 
+    it('labels unapplied warnings but matches by the raw handler', async () => {
+      const content = {
+        ...REPORT_ACTIONS[0],
+        key: 'same-key',
+        handler: 'ContentHandler'
+      }
+      // Different raw handler, same label and key: must not count as unapplied.
+      const lookalike = { ...content, handler: 'Content' }
+      const t = makeContext()
+      imported(t)
+      preReport(t, [content])
+      t.usync.perform.mockResolvedValueOnce(completeWith([lookalike]))
+      const outcome = await reportStage.run(t.ctx)
+      expect((outcome.data as ReportData).unapplied).toEqual([])
+      expect((outcome.data as ReportData).appeared).toEqual([lookalike])
+
+      core.warning.mockClear()
+      preReport(t, [content])
+      t.usync.perform.mockResolvedValueOnce(completeWith([content]))
+      const again = await reportStage.run(t.ctx)
+      expect((again.data as ReportData).unapplied).toEqual([content])
+      expect(core.warning.mock.calls.map((c) => c[0])).toContain(
+        `Content: ${content.name} (${content.change})`
+      )
+    })
+
     it('matches by name when uSync gives an all-zero key', async () => {
       const zero = '00000000-0000-0000-0000-000000000000'
       const t = makeContext()
@@ -460,6 +487,31 @@ describe('item logging', () => {
     expect(lines.filter((l) => l.includes('Data Types:'))).toHaveLength(2)
   })
 
+  it('logs handler aliases as labels and warns about errors with them', async () => {
+    const t = makeContext()
+    const content = {
+      ...DATA_TYPE_ITEMS[0],
+      handler: 'ContentHandler',
+      name: 'Home'
+    }
+    const failedType = {
+      ...DATA_TYPE_ITEMS[0],
+      key: 'k9',
+      handler: 'ContentTypeHandler',
+      name: 'Page',
+      change: 'ImportFail' as const,
+      success: false
+    }
+    t.usync.perform.mockResolvedValueOnce(completeWith([content, failedType]))
+    await importStage.run(t.ctx)
+    expect(core.info.mock.calls.map((c) => c[0])).toContain(
+      '  Content: Home - Update (1 properties)'
+    )
+    const warnings = core.warning.mock.calls.map((c) => c[0])
+    expect(warnings).toContain('ContentType: Page (ImportFail)')
+    expect(warnings.join('\n')).not.toContain('Handler')
+  })
+
   it('caps the list at 100 lines', async () => {
     const t = makeContext()
     t.usync.perform.mockResolvedValueOnce(
@@ -541,6 +593,54 @@ describe('exportStage', () => {
         zipBytes: 9
       })
       expect(outcome.summary).toContain('uploaded artifact my-export')
+      await rm(dir, { recursive: true, force: true })
+    })
+
+    it('keeps the zip and warns when artifact upload is unavailable', async () => {
+      const t = makeContext(
+        { downloadExport: true, exportArtifactName: 'my-export' },
+        dir
+      )
+      t.usync.perform.mockResolvedValueOnce(EXPORT_RESPONSE)
+      t.usync.download.mockResolvedValueOnce(Buffer.from('zip-bytes'))
+      t.artifacts.upload.mockRejectedValueOnce(
+        new ArtifactUploadUnavailableError('no token')
+      )
+
+      const outcome = await exportStage.run(t.ctx)
+
+      const file = join(dir, 'usync-export', 'my-export.zip')
+      expect(await readFile(file, 'utf8')).toBe('zip-bytes')
+      expect(outcome.status).toBe('warning')
+      expect(outcome.summary).toContain(
+        `artifact upload is only available on GitHub runners, zip kept at ${file}`
+      )
+      const data = outcome.data as PerformData
+      expect(data.zipPath).toBe(file)
+      expect(data.artifactName).toBeUndefined()
+      await rm(dir, { recursive: true, force: true })
+    })
+
+    it('still fails when the export had errors and upload is unavailable', async () => {
+      const t = makeContext({ downloadExport: true }, dir)
+      t.usync.perform.mockResolvedValueOnce(
+        completeWith([{ ...DATA_TYPE_ITEMS[0], success: false }])
+      )
+      t.usync.download.mockResolvedValueOnce(Buffer.from('zip'))
+      t.artifacts.upload.mockRejectedValueOnce(
+        new ArtifactUploadUnavailableError('no token')
+      )
+      const outcome = await exportStage.run(t.ctx)
+      expect(outcome.status).toBe('failed')
+      await rm(dir, { recursive: true, force: true })
+    })
+
+    it('fails the stage on any other upload error', async () => {
+      const t = makeContext({ downloadExport: true }, dir)
+      t.usync.perform.mockResolvedValueOnce(EXPORT_RESPONSE)
+      t.usync.download.mockResolvedValueOnce(Buffer.from('zip'))
+      t.artifacts.upload.mockRejectedValueOnce(new Error('quota exceeded'))
+      await expect(exportStage.run(t.ctx)).rejects.toThrow('quota exceeded')
       await rm(dir, { recursive: true, force: true })
     })
 

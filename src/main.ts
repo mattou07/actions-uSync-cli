@@ -11,11 +11,16 @@ import { runPipeline } from './pipeline.js'
 import { setOutputs, writeResultsFile } from './report/outputs.js'
 import { writeSummary } from './report/summary.js'
 import type { ArtifactUploader, StageContext } from './stages/types.js'
-import { errorMessage } from './stages/types.js'
+import { ArtifactUploadUnavailableError, errorMessage } from './stages/types.js'
 
 function createArtifactUploader(): ArtifactUploader {
   return {
     async upload(name, filePath, rootDir) {
+      if (!process.env.ACTIONS_RUNTIME_TOKEN) {
+        throw new ArtifactUploadUnavailableError(
+          'Artifact upload is only available on GitHub runners (ACTIONS_RUNTIME_TOKEN is not set)'
+        )
+      }
       const response = await new DefaultArtifactClient().uploadArtifact(
         name,
         [filePath],

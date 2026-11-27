@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "usync-cli-site",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": [
+        "run",
+        "--project",
+        "C:/Projects/usync-cli-site/MyProject",
+        "--launch-profile",
+        "Umbraco.Web.UI",
+        "--no-launch-profile-arguments"
+      ],
+      "port": 19463,
+      "url": "http://localhost:19463"
+    }
+  ]
+}

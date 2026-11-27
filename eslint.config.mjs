@@ -27,7 +27,8 @@ export default [
       '**/dist',
       '**/linter',
       '**/node_modules',
-      'jest.setup.js'
+      'jest.setup.js',
+      'script/**/*.mjs'
     ]
   },
   ...compat.extends(

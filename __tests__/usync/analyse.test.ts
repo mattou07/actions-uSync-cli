@@ -3,6 +3,7 @@ import {
   ERROR_CHANGES,
   NON_CHANGES,
   analyse,
+  handlerLabel,
   isChangeAction,
   isErrorAction
 } from '../../src/usync/analyse.js'
@@ -126,39 +127,31 @@ describe('analyse', () => {
     ])
   })
 
-  it('joins per-handler error counts onto the server status', () => {
+  it('takes handlers from the status only, carrying changes and inError', () => {
     const analysis = analyse(
-      [
-        item('Create', { handler: 'A' }),
-        item('Fail', { handler: 'B' }),
-        item('Mismatch', { handler: 'B' }),
-        item('Update', { handler: 'B', success: false })
-      ],
+      [item('Create', { handler: 'A' }), item('Fail', { handler: 'B' })],
       [summary('A', 7), summary('B', 3), summary('C', 0, true)]
     )
     expect(analysis.handlers).toEqual([
-      { name: 'A', changes: 7, errors: 0, inError: false },
-      { name: 'B', changes: 3, errors: 3, inError: true },
-      { name: 'C', changes: 0, errors: 0, inError: true }
+      { name: 'A', changes: 7, inError: false },
+      { name: 'B', changes: 3, inError: false },
+      { name: 'C', changes: 0, inError: true }
     ])
   })
 
-  it('adds handlers that only appear in actions, with our own counts', () => {
+  it('does not invent handler rows from item handler aliases', () => {
     const analysis = analyse(
       [
-        item('Create', { handler: 'Only' }),
-        item('Update', { handler: 'Only' }),
-        item('NoChange', { handler: 'Quiet' }),
-        item('Fail', { handler: 'Broken' })
+        item('Update', { handler: 'ContentHandler' }),
+        item('Fail', { handler: 'TemplateHandler' })
       ],
-      [summary('Listed', 1)]
+      [summary('Content', 1), summary('Templates', 0)]
     )
-    expect(analysis.handlers).toEqual([
-      { name: 'Listed', changes: 1, errors: 0, inError: false },
-      { name: 'Only', changes: 2, errors: 0, inError: false },
-      { name: 'Quiet', changes: 0, errors: 0, inError: false },
-      { name: 'Broken', changes: 0, errors: 1, inError: true }
+    expect(analysis.handlers.map((h) => h.name)).toEqual([
+      'Content',
+      'Templates'
     ])
+    expect(analysis.handlers.every((h) => h.inError === false)).toBe(true)
   })
 
   it('analyses the import fixture', () => {
@@ -174,7 +167,6 @@ describe('analyse', () => {
     expect(analysis.handlers.find((h) => h.name === 'Templates')).toEqual({
       name: 'Templates',
       changes: 0,
-      errors: 1,
       inError: true
     })
   })
@@ -183,5 +175,22 @@ describe('analyse', () => {
     const analysis = analyse(REPORT_RESPONSE.actions, REPORT_RESPONSE.status)
     expect(analysis.changes).toHaveLength(4)
     expect(analysis.errors).toHaveLength(0)
+  })
+})
+
+describe('handlerLabel', () => {
+  it('strips a trailing Handler from the alias', () => {
+    expect(handlerLabel('ContentHandler')).toBe('Content')
+    expect(handlerLabel('ContentTypeHandler')).toBe('ContentType')
+  })
+
+  it('leaves names without the suffix unchanged', () => {
+    expect(handlerLabel('Data Types')).toBe('Data Types')
+    expect(handlerLabel('HandlerContent')).toBe('HandlerContent')
+    expect(handlerLabel('Handlers')).toBe('Handlers')
+  })
+
+  it('keeps a bare Handler as it is', () => {
+    expect(handlerLabel('Handler')).toBe('Handler')
   })
 })
